@@ -4,13 +4,15 @@
 // Eingabe:  Blöcke (aus markdown.js) + deine Schrift + Stift-Einstellungen
 // Ausgabe:  Seiten mit fertigen Strichen in Millimetern
 //
-//   { pages: [{ strokes: [{ pts: [x,y,x,y…], w }], missing: [...] }],
-//     geo: { width, height, margin }, missingChars: ['ß', …] }
+//   { pages: [{ strokes: [{ pts: [x,y,x,y…], w }], ghosts, missing, glyphs }],
+//     geo: { width, height, margin }, missingChars: ['ß', …], key }
+//
+//   glyphs = pro Zeichen eine Box { idx, ch, x0, y0, x1, y1, strokes } → Radierer & Antippen
 //
 // Alles in Millimetern (mm) – so passt es 1:1 auf A4 & Co.
 
 import { hash, rng, rangeFn } from './random.js';
-import { glyphMetrics, getVariants, resolveChar } from './glyphs.js';
+import { glyphMetrics, getVariants, resolveChar, fixVariant } from './glyphs.js';
 import { isLetter } from './charsets.js';
 
 export const PAGE_FORMATS = {
@@ -87,26 +89,35 @@ function handLine(x0, x1, y, R, size) {
   return pts;
 }
 
-/** Text in Wörter zerlegen. Jedes Zeichen bekommt eine feste Nummer (idx) für den Zufall. */
+/**
+ * Text in Wörter zerlegen. Jedes Zeichen bekommt eine feste Nummer (idx) –
+ * für den Zufall und damit Radierungen wissen, zu welchem Zeichen sie gehören.
+ * Jedes Wort merkt sich seinen Bereich (w0 = erste, w1 = letzte Nummer).
+ */
 function splitWords(runs, counter) {
   const words = [];
   let cur = [];
+  const push = () => {
+    if (cur.length) words.push({ chars: cur, w0: cur[0].idx, w1: cur.at(-1).idx });
+    cur = [];
+  };
   for (const run of runs) {
     for (const ch of run.text) {
       const idx = counter.value++;
-      if (/\s/.test(ch)) {
-        if (cur.length) words.push(cur);
-        cur = [];
-      } else {
-        cur.push({ ch, idx, bold: run.bold, sup: run.sup, sub: run.sub });
-      }
+      if (/\s/.test(ch)) push();
+      else cur.push({ ch, idx, bold: run.bold, sup: run.sup, sub: run.sub });
     }
   }
-  if (cur.length) words.push(cur);
+  push();
   return words;
 }
 
-export function layoutDocument(blocks, font, pen, { continuous = false } = {}) {
+/**
+ * options:
+ *   continuous – keine Seitenumbrüche (für "Kopieren")
+ *   edits      – Radierungen & Neu-Würfeln (siehe state.js / edits.js)
+ */
+export function layoutDocument(blocks, font, pen, { continuous = false, edits = null } = {}) {
   const geo = pageGeometry(pen);
   const { margin } = geo;
   const left = margin.left;
@@ -118,18 +129,21 @@ export function layoutDocument(blocks, font, pen, { continuous = false } = {}) {
   const style = STYLES[font.style] ?? STYLES.print;
   const jit = clamp(pen.jitter, 0, 1);
   const seed = pen.seed >>> 0;
+  const erased = edits?.erased ?? {};
+  const reroll = edits?.reroll ?? {};
+  const autoFix = font.autoFix !== false;
 
   const pages = [];
   const missingChars = new Set();
-  const lastVariant = new Map();
   const resolveCache = new Map();
   const counter = { value: 0 };
+  let key = '';
   let page;
   let lineNo = 0;
   let lineCounter = 0;
 
   const newPage = () => {
-    page = { strokes: [], missing: [], lines: 0 };
+    page = { strokes: [], ghosts: [], missing: [], glyphs: [], lines: 0 };
     pages.push(page);
     lineNo = 0;
   };
@@ -148,21 +162,31 @@ export function layoutDocument(blocks, font, pen, { continuous = false } = {}) {
 
   // ── Ein Wort setzen (Buchstabe für Buchstabe) ────────────
   // Ergebnis relativ zum Wortanfang: x ab 0, Grundlinie bei y = 0
-  function layoutWord(chars, sizeH) {
-    const out = { strokes: [], missing: [], width: 0 };
+  //   strokes = sichtbare Striche, ghosts = wegradierte (nur blass in der Vorschau)
+  //   glyphs  = pro Zeichen eine Box (für Radierer & Antippen)
+  function layoutWord(chars, sizeH, w0, w1) {
+    const out = { strokes: [], ghosts: [], missing: [], glyphs: [], width: 0 };
+    const lastVariant = new Map(); // pro Wort → "Neu würfeln" ändert nur dieses Wort
     let cursor = 0;
     let prev = null; // Infos über den vorherigen Buchstaben
 
     for (const c of chars) {
       const pieces = resolve(c.ch);
       const width = pen.width * (c.bold ? 1.6 : 1);
+      const gone = !!erased[c.idx];
+      const rec = {
+        idx: c.idx, ch: c.ch, gch: null, variant: 0, w0, w1, erased: gone,
+        x0: Infinity, x1: -Infinity, y0: Infinity, y1: -Infinity,
+      };
+      out.glyphs.push(rec);
 
       if (!pieces) {
         // Zeichen fehlt → Platzhalter (nur in der Vorschau sichtbar)
         missingChars.add(c.ch);
         const w = 0.55 * sizeH;
         const h = 0.8 * sizeH;
-        out.missing.push({ x: cursor, y: -h, w, h, ch: c.ch });
+        if (!gone) out.missing.push({ x: cursor, y: -h, w, h, ch: c.ch });
+        Object.assign(rec, { x0: cursor, x1: cursor + w, y0: -h, y1: 0 });
         cursor += w + 0.12 * sizeH;
         out.width = Math.max(out.width, cursor);
         prev = null;
@@ -170,7 +194,7 @@ export function layoutDocument(blocks, font, pen, { continuous = false } = {}) {
       }
 
       pieces.forEach((piece, pi) => {
-        const R = rangeFn(rng(hash(seed, c.idx, pi)));
+        const R = rangeFn(rng(hash(seed, c.idx, pi, reroll[c.idx] ?? 0)));
         const variants = getVariants(font, piece.ch);
 
         // Variante wählen – möglichst nicht zweimal dieselbe hintereinander
@@ -179,7 +203,12 @@ export function layoutDocument(blocks, font, pen, { continuous = false } = {}) {
           vi = (vi + 1 + Math.floor(R(0, variants.length - 1))) % variants.length;
         }
         lastVariant.set(piece.ch, vi);
-        const g = glyphMetrics(variants[vi]);
+        const raw = variants[vi];
+        const g = glyphMetrics(autoFix ? fixVariant(font, piece.ch, raw) : raw);
+        if (pi === 0) {
+          rec.gch = piece.ch;
+          rec.variant = font.glyphs[piece.ch]?.indexOf(raw) ?? vi;
+        }
 
         const sup = c.sup || piece.sup;
         const sub = (c.sub || piece.sub) && !sup;
@@ -241,14 +270,22 @@ export function layoutDocument(blocks, font, pen, { continuous = false } = {}) {
           }
         }
 
-        if (connected) {
+        // Verbindungsstrich nur zwischen zwei sichtbaren Buchstaben
+        if (connected && !gone && !prev.gone) {
           const b = bridge(prev.exit, prev.exitDir, [entry[0] + offset, entry[1]], rotDir(g.entryDir));
-          if (b) out.strokes.push({ pts: b, w: prev.width });
+          if (b) out.strokes.push({ pts: b, w: prev.width, g: rec });
         }
 
+        const target = gone ? out.ghosts : out.strokes;
         for (const st of strokes) {
-          for (let i = 0; i < st.length; i += 2) st[i] += offset;
-          out.strokes.push({ pts: st, w: width });
+          for (let i = 0; i < st.length; i += 2) {
+            st[i] += offset;
+            if (st[i] < rec.x0) rec.x0 = st[i];
+            if (st[i] > rec.x1) rec.x1 = st[i];
+            if (st[i + 1] < rec.y0) rec.y0 = st[i + 1];
+            if (st[i + 1] > rec.y1) rec.y1 = st[i + 1];
+          }
+          target.push({ pts: st, w: width, g: rec });
         }
 
         const maxX = tMax + offset;
@@ -260,6 +297,7 @@ export function layoutDocument(blocks, font, pen, { continuous = false } = {}) {
           exitDir: g.exitDir && rotDir(g.exitDir),
           maxX,
           width,
+          gone,
         };
       });
     }
@@ -267,18 +305,18 @@ export function layoutDocument(blocks, font, pen, { continuous = false } = {}) {
   }
 
   /** Aufzählungspunkt • (gezeichnet, falls vorhanden – sonst ein Tinten-Punkt) */
-  function bulletWord(bullet, sizeH, idx) {
-    if (bullet !== '•') {
-      return layoutWord([...bullet].map((ch, i) => ({ ch, idx: idx + i })), sizeH);
-    }
-    if (getVariants(font, '•').length) return layoutWord([{ ch: '•', idx }], sizeH);
+  function bulletWord(bullet, sizeH) {
+    const chars = [...bullet].map((ch) => ({ ch, idx: counter.value++ }));
+    const w0 = chars[0].idx, w1 = chars.at(-1).idx;
+    if (chars.every((c) => erased[c.idx] === 'close')) return null;
+    if (bullet !== '•' || getVariants(font, '•').length) return layoutWord(chars, sizeH, w0, w1);
     const r = 0.03 * sizeH;
     const y = -0.27 * sizeH;
-    return {
-      strokes: [{ pts: [0, y, r, y + r * 0.3], w: Math.max(pen.width * 2.2, sizeH * 0.13) }],
-      missing: [],
-      width: r,
-    };
+    const w = Math.max(pen.width * 2.2, sizeH * 0.13);
+    const gone = !!erased[w0];
+    const rec = { idx: w0, ch: '•', gch: null, variant: 0, w0, w1, erased: gone, x0: -w / 2, x1: r + w / 2, y0: y - w / 2, y1: y + w / 2 };
+    const dot = { pts: [0, y, r, y + r * 0.3], w, g: rec };
+    return { strokes: gone ? [] : [dot], ghosts: gone ? [dot] : [], missing: [], glyphs: [rec], width: r };
   }
 
   // ── Eine fertige Zeile auf die Seite legen ───────────────
@@ -291,15 +329,30 @@ export function layoutDocument(blocks, font, pen, { continuous = false } = {}) {
     const map = (x, y) => [x, baseY + y + lift + slope * (x - left)];
 
     for (const { word, x } of items) {
-      for (const st of word.strokes) {
-        const pts = new Array(st.pts.length);
-        for (let i = 0; i < pts.length; i += 2) {
-          const [X, Y] = map(st.pts[i] + x, st.pts[i + 1]);
-          pts[i] = X;
-          pts[i + 1] = Y;
-        }
-        page.strokes.push({ pts, w: st.w });
+      // Boxen der Zeichen auf die Seite übertragen
+      const recs = new Map();
+      for (const gl of word.glyphs) {
+        const [ax, ay] = map(gl.x0 + x, gl.y0);
+        const [bx, by] = map(gl.x1 + x, gl.y1);
+        const pg = { ...gl, x0: ax, x1: bx, y0: Math.min(ay, by), y1: Math.max(ay, by), strokes: [] };
+        recs.set(gl, pg);
+        page.glyphs.push(pg);
       }
+      const place = (list, into) => {
+        for (const st of list) {
+          const pts = new Array(st.pts.length);
+          for (let i = 0; i < pts.length; i += 2) {
+            const [X, Y] = map(st.pts[i] + x, st.pts[i + 1]);
+            pts[i] = X;
+            pts[i + 1] = Y;
+          }
+          const ps = { pts, w: st.w };
+          into.push(ps);
+          recs.get(st.g)?.strokes.push(ps);
+        }
+      };
+      place(word.strokes, page.strokes);
+      place(word.ghosts, page.ghosts);
       for (const m of word.missing) {
         const [X, Y] = map(m.x + x, m.y);
         page.missing.push({ x: X, y: Y, w: m.w, h: m.h, ch: m.ch });
@@ -343,13 +396,15 @@ export function layoutDocument(blocks, font, pen, { continuous = false } = {}) {
     let textX = indentX;
     const items = [];
     if (block.bullet) {
-      const bw = bulletWord(block.bullet, sizeH, counter.value);
-      items.push({ word: bw, x: indentX });
-      textX = indentX + Math.max(bw.width + pen.size * 0.5, pen.size);
+      key += block.bullet;
+      const bw = bulletWord(block.bullet, sizeH);
+      if (bw) items.push({ word: bw, x: indentX });
+      textX = indentX + Math.max((bw?.width ?? 0) + pen.size * 0.5, pen.size);
     } else if (block.hang) {
       textX = indentX + pen.size;
     }
 
+    for (const r of block.runs) key += r.text;
     const words = splitWords(block.runs, counter);
     let x = textX;
     let lineStart = textX;
@@ -364,10 +419,13 @@ export function layoutDocument(blocks, font, pen, { continuous = false } = {}) {
       hasText = false;
     };
 
-    for (const chars of words) {
+    for (const { chars: all, w0, w1 } of words) {
+      // "Zusammengerückt" wegradierte Zeichen gibt es im Layout einfach nicht
+      const chars = all.filter((c) => erased[c.idx] !== 'close');
+      if (!chars.length) continue;
       const R = rangeFn(rng(hash(seed, 0x77, chars[0].idx)));
       const gap = (pen.wordSpacing + jit * R(-0.06, 0.06)) * sizeH;
-      let word = layoutWord(chars, sizeH);
+      let word = layoutWord(chars, sizeH, w0, w1);
 
       // Passt nicht mehr in die Zeile → neue Zeile
       if (hasText && x + gap + word.width > right) flush();
@@ -376,14 +434,14 @@ export function layoutDocument(blocks, font, pen, { continuous = false } = {}) {
       let rest = chars;
       while (!hasText && word.width > right - x && rest.length > 1) {
         let k = rest.length - 1;
-        let part = layoutWord(rest.slice(0, k), sizeH);
-        while (k > 1 && part.width > right - x) part = layoutWord(rest.slice(0, --k), sizeH);
+        let part = layoutWord(rest.slice(0, k), sizeH, w0, w1);
+        while (k > 1 && part.width > right - x) part = layoutWord(rest.slice(0, --k), sizeH, w0, w1);
         items.push({ word: part, x });
         x += part.width;
         hasText = true;
         flush();
         rest = rest.slice(k);
-        word = layoutWord(rest, sizeH);
+        word = layoutWord(rest, sizeH, w0, w1);
       }
 
       if (hasText) x += gap;
@@ -397,11 +455,11 @@ export function layoutDocument(blocks, font, pen, { continuous = false } = {}) {
 
   // Leere letzte Seite entfernen
   const last = pages.at(-1);
-  if (pages.length > 1 && !last.strokes.length && !last.missing.length) pages.pop();
+  if (pages.length > 1 && !last.strokes.length && !last.missing.length && !last.glyphs.length) pages.pop();
 
   if (continuous) {
     geo.height = margin.top + (pages[0].lines + 1) * lh + margin.bottom;
   }
 
-  return { pages, geo, missingChars: [...missingChars] };
+  return { pages, geo, missingChars: [...missingChars], key };
 }

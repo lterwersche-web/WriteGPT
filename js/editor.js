@@ -4,11 +4,32 @@
 // Nutzt "Pointer Events": EIN Event-System für Stift, Finger und Maus.
 // e.pointerType sagt uns, was es war: 'pen' | 'touch' | 'mouse'.
 
-import { BOX, GUIDES, simplify, glyphMetrics } from './glyphs.js';
+import { BOX, GUIDES, simplify, glyphMetrics, strokeLength } from './glyphs.js';
 import { drawStrokes } from './render.js';
 
 const INK = '#1c1c1e';
 const INK_WIDTH = 0.05; // Strichdicke im Zeichenfeld (in Einheiten)
+
+// ── Wurde auf diesem Gerät schon mal ein Apple Pencil benutzt? ──
+// Wird gespeichert, damit die Handballen-Erkennung auch nach einem
+// Neustart der App sofort aktiv ist (vorher galt das nur pro Zeichenfeld).
+const PEN_KEY = 'writegpt:pen-seen';
+let penSeen = false;
+try {
+  penSeen = localStorage.getItem(PEN_KEY) === '1';
+} catch {}
+
+export function isPenSeen() {
+  return penSeen;
+}
+
+export function markPenSeen() {
+  if (penSeen) return;
+  penSeen = true;
+  try {
+    localStorage.setItem(PEN_KEY, '1');
+  } catch {}
+}
 
 export class GlyphEditor {
   constructor(host, { onChange } = {}) {
@@ -17,7 +38,8 @@ export class GlyphEditor {
     this.strokes = []; // fertige Striche
     this.current = null; // Strich, der gerade gezeichnet wird
     this.pointerId = null;
-    this.penSeen = false; // Wurde schon ein Apple Pencil benutzt?
+    this.pointerType = null;
+    this.lastUp = 0; // Zeitpunkt, an dem der letzte Strich endete
     this.hint = '';
 
     this.canvas = document.createElement('canvas');
@@ -44,13 +66,20 @@ export class GlyphEditor {
 
   down(e) {
     // Handballen-Erkennung: Sobald ein Stift benutzt wurde, Finger ignorieren
-    if (e.pointerType === 'pen') this.penSeen = true;
-    if (this.penSeen && e.pointerType === 'touch') return;
-    if (this.pointerId !== null) return;
+    if (e.pointerType === 'pen') markPenSeen();
+    if (isPenSeen() && e.pointerType === 'touch') return;
+    if (this.pointerId !== null) {
+      // Der Stift gewinnt immer: Hat der Handballen schon einen "Strich"
+      // angefangen, wird der verworfen und der Stift zeichnet.
+      if (e.pointerType !== 'pen' || this.pointerType === 'pen') return;
+      this.current = null;
+    }
     e.preventDefault();
     this.pointerId = e.pointerId;
+    this.pointerType = e.pointerType;
     this.canvas.setPointerCapture(e.pointerId);
     this.current = [...this.toUnits(e)];
+    this.startedAt = performance.now();
     this.draw();
   }
 
@@ -70,13 +99,34 @@ export class GlyphEditor {
 
   up(e) {
     if (e.pointerId !== this.pointerId) return;
+    const type = this.pointerType;
     this.pointerId = null;
-    if (this.current) {
-      this.strokes.push(simplify(this.current, 0.003));
-      this.current = null;
+    this.pointerType = null;
+    if (!this.current) return;
+    const pts = simplify(this.current, 0.003);
+    this.current = null;
+
+    // Pencil-"Abpraller": Beim Abheben tippt der Stift manchmal ein zweites
+    // Mal ganz kurz auf. Das ergibt einen Mini-Strich direkt am Ende des
+    // letzten Strichs → wird ignoriert (sonst: komische Punkte/Kommas im Text).
+    const last = this.strokes.at(-1);
+    const bounce =
+      last &&
+      e.type !== 'pointercancel' &&
+      this.startedAt - this.lastUp < 150 &&
+      strokeLength(pts) < 0.03 &&
+      Math.hypot(pts[0] - last[last.length - 2], pts[1] - last[last.length - 1]) < 0.08;
+    this.lastUp = performance.now();
+
+    // Vom iPad abgebrochene Finger-Berührungen = meistens der Handballen → weg
+    const palm = e.type === 'pointercancel' && type !== 'pen';
+    if (bounce || palm) {
       this.draw();
-      this.onChange?.();
+      return;
     }
+    this.strokes.push(pts);
+    this.draw();
+    this.onChange?.();
   }
 
   isEmpty() {

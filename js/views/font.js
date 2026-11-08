@@ -313,8 +313,10 @@ export function createFontView(app) {
     else renderDone();
   }
 
-  function jumpToChar(ch) {
-    const idx = steps.findIndex((s) => s.ch === ch);
+  /** Springt zu einem Zeichen – wenn angegeben, direkt zu einer bestimmten Variante */
+  function jumpToChar(ch, variant = 0) {
+    const exact = steps.findIndex((s) => s.ch === ch && s.variant === variant);
+    const idx = exact >= 0 ? exact : steps.findIndex((s) => s.ch === ch);
     if (idx >= 0) {
       if (mode !== 'draw') renderDraw(idx);
       else goTo(idx);
@@ -447,7 +449,7 @@ export function createFontView(app) {
     el,
     show(params = {}) {
       refreshSteps();
-      if (params.drawChar) return jumpToChar(params.drawChar);
+      if (params.drawChar) return jumpToChar(params.drawChar, params.variant ?? 0);
       if (!font().configured) return renderSetup();
       if (mode === 'draw') {
         // Weiter da, wo man war (Einstellungen könnten sich geändert haben)

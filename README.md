@@ -23,10 +23,20 @@ als Bild zum Einfügen, als PNG oder als PDF.
   `# Überschrift` → größer + unterstrichen, `- Liste` → saubere Aufzählungspunkte,
   Mathe-Formeln wie `\frac{a}{b}` oder `x^2` → `a/b` und hochgestellte 2.
 - Fehlt dir ein Zeichen, zeigt die Vorschau ein rotes Kästchen und einen Button „Jetzt zeichnen“.
+- **Radierer** (unten in der Leiste): Mit dem Stift über Buchstaben wischen → sie verschwinden.
+  Wählbar: *Lücke lassen* oder *Zusammenrücken*. Mit „Rückgängig“ und „Alles zurück“.
+- **Wort antippen** → *Neu würfeln* (andere Varianten), *Wegradieren*, *Wiederherstellen*
+  oder *„x“ neu zeichnen* (springt direkt zur Zeichnung, die komisch aussieht).
+- **Automatisch ausrichten** (Einstellungen, standardmäßig an): rückt Buchstaben auf die
+  Grundlinie, gleicht zu große/kleine Buchstaben an und entfernt verirrte Mini-Striche.
 - Unter **Stift & Papier** stellst du Tintenfarbe, Stiftdicke, Größe, Abstände, „Natürlichkeit“
   (wie stark die Schrift wackelt) und das Papier (blanko, liniert, kariert, gepunktet; A4/A5/Letter) ein.
 - **Neu mischen** würfelt die Zufalls-Schwankungen neu.
 - Alles bleibt **auf deinem Gerät**. Mach in den Einstellungen ab und zu ein **Backup**.
+
+> **Radieren in Goodnotes:** Der Goodnotes-Radierer wirkt nur auf Striche, die direkt in
+> Goodnotes gezeichnet wurden – nicht auf eingefügte Bilder oder PDFs. Deshalb: vorher in
+> WriteGPT radieren, oder in Goodnotes mit einem weißen Stift drübermalen.
 
 ---
 
@@ -68,6 +78,7 @@ WriteGPT/
 │   ├── glyphs.js         Infos über gezeichnete Buchstaben (Breite, Anfang, Ende)
 │   ├── editor.js         Das Zeichenfeld für Apple Pencil / Finger
 │   ├── markdown.js       ChatGPT-Text → saubere Blöcke (Überschrift, Liste, …)
+│   ├── edits.js          Radierungen & „Neu würfeln“ dem richtigen Zeichen zuordnen
 │   ├── layout.js         Herzstück: Wo landet welcher Buchstabe auf der Seite?
 │   ├── render.js         Malt Striche & Papier auf ein <canvas>
 │   ├── pdf.js            Baut ein PDF selbst – ohne fremde Bibliothek
@@ -101,3 +112,8 @@ WriteGPT/
 5. **Zufall mit Seed:** Derselbe Startwert erzeugt immer dieselben „Zufallszahlen“ → die
    Vorschau wackelt beim Tippen nicht ständig hin und her.
 6. **Export:** PNG = Canvas als Bild. PDF = Vektor-Zeichenbefehle → gestochen scharf in Goodnotes.
+7. **Saubere Striche:** Jeder Strich wird in „harmlose“ Stücke zerlegt (zu dichte Punkte raus,
+   an Ecken trennen, weiche Kurve durch die Punkte, sehr enge Kurven trennen). Sonst entstehen in
+   Apples Grafik-Engine (Goodnotes, Safari) kleine Löcher – die „weißen Punkte“.
+8. **Auto-Fix:** Die App berechnet aus allen deinen Buchstaben den typischen Wert (Median) für
+   Größe und Grundlinie und rückt Ausreißer zurecht – deine Zeichnungen selbst bleiben unverändert.

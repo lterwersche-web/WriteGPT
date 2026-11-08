@@ -61,6 +61,50 @@ export function confirmDialog({ title, message, confirm = 'OK', cancel = 'Abbrec
 }
 
 /**
+ * Info-Fenster mit einem Button. body = HTML (nur eigene, feste Texte!)
+ */
+export function infoDialog({ title, body, confirm = 'Alles klar' }) {
+  return new Promise((resolve) => {
+    const dlg = document.createElement('dialog');
+    dlg.className = 'dialog dialog-info';
+    dlg.innerHTML = `<h3></h3><div class="dialog-body">${body}</div>
+      <div class="dialog-actions"><button class="btn btn-primary"></button></div>`;
+    dlg.querySelector('h3').textContent = title;
+    const btn = dlg.querySelector('button');
+    btn.textContent = confirm;
+    const close = () => {
+      dlg.close();
+      dlg.remove();
+      resolve();
+    };
+    btn.onclick = close;
+    dlg.addEventListener('cancel', (e) => {
+      e.preventDefault();
+      close();
+    });
+    document.body.append(dlg);
+    dlg.showModal();
+  });
+}
+
+/** Erklärt, warum Goodnotes eingefügte Schrift nicht radieren kann – und was trotzdem geht */
+export function showGoodnotesTip() {
+  return infoDialog({
+    title: 'Radieren in Goodnotes',
+    body: `
+      <p>Der Goodnotes-Radierer entfernt nur Striche, die <strong>direkt in Goodnotes</strong> gezeichnet wurden.
+      Eingefügte Bilder und PDFs kann er nicht radieren – das liegt an Goodnotes, nicht an WriteGPT.</p>
+      <ol class="tip-list">
+        <li><strong>Am besten vorher:</strong> Hier in WriteGPT mit dem Radierer wegwischen oder ein Wort antippen
+          → „Neu würfeln“. Erst danach kopieren.</li>
+        <li><strong>Weiß-Trick in Goodnotes:</strong> Stift in Papierfarbe (meist Weiß) wählen und über die Stelle
+          malen – sieht aus wie wegradiert. Klappt nur auf weißem bzw. einfarbigem Papier.</li>
+        <li><strong>Ganzes Bild weg:</strong> Lasso-Werkzeug → Bild auswählen → Löschen.</li>
+      </ol>`,
+  });
+}
+
+/**
  * Segment-Schalter (wie bei iOS): [ A | B | C ]
  * options = [{ value, label }], onChange(value)
  */

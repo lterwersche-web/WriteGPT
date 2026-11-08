@@ -7,9 +7,9 @@ import { CHAR_SETS, buildSteps } from '../charsets.js';
 import { STYLES } from '../layout.js';
 import { shareOrDownload } from '../export.js';
 import { icon } from '../icons.js';
-import { toast, confirmDialog, segmented, toggle, esc } from '../ui.js';
+import { toast, confirmDialog, showGoodnotesTip, segmented, toggle, esc } from '../ui.js';
 
-export const APP_VERSION = '1.0.0';
+export const APP_VERSION = '1.1.0';
 
 export function createSettingsView(app) {
   const el = document.createElement('section');
@@ -33,6 +33,10 @@ export function createSettingsView(app) {
           <div class="row">
             <div class="row-text"><strong>Varianten pro Zeichen</strong><span>Mehr Varianten = natürlicheres Schriftbild</span></div>
             <div class="slot-variants"></div>
+          </div>
+          <div class="row">
+            <div class="row-text"><strong>Automatisch ausrichten</strong><span>Rückt Buchstaben auf die Grundlinie, gleicht Ausreißer bei der Größe an und entfernt verirrte Mini-Striche</span></div>
+            <div class="slot-autofix"></div>
           </div>
           <div class="slot-sets"></div>
           <div class="row">
@@ -73,6 +77,8 @@ export function createSettingsView(app) {
             <li><span class="step-num">${icon('copy')}</span><div><strong>Kopieren:</strong> In WriteGPT auf „Kopieren“ tippen → in Goodnotes lange auf die Seite tippen → „Einsetzen“. Die Schrift hat keinen Hintergrund.</div></li>
             <li><span class="step-num">${icon('image')}</span><div><strong>PNG:</strong> Bild speichern oder über „Teilen“ direkt an Goodnotes schicken.</div></li>
             <li><span class="step-num">${icon('file')}</span><div><strong>PDF:</strong> Über „Teilen“ → Goodnotes als neues Dokument importieren – mit Papier-Linien.</div></li>
+            <li><span class="step-num">${icon('eraser')}</span><div><strong>Radieren:</strong> Der Goodnotes-Radierer wirkt nur auf Striche, die in Goodnotes gezeichnet wurden – nicht auf eingefügte Bilder oder PDFs. Radiere deshalb vorher hier in WriteGPT oder nutze den Weiß-Trick.
+              <button class="btn btn-ghost btn-xs link-btn" data-act="gn-tip">So geht's ${icon('right')}</button></div></li>
           </ol>
         </section>
 
@@ -88,6 +94,10 @@ export function createSettingsView(app) {
     );
     el.querySelector('.slot-variants').append(
       segmented([1, 2, 3].map((v) => ({ value: v, label: `${v}×` })), font.variants, (v) => setFont({ variants: Number(v) }), { small: true }),
+    );
+
+    el.querySelector('.slot-autofix').append(
+      toggle(font.autoFix !== false, (v) => setFont({ autoFix: v }), 'Automatisch ausrichten'),
     );
 
     const sets = el.querySelector('.slot-sets');
@@ -122,6 +132,7 @@ export function createSettingsView(app) {
     if (!btn) return;
     const act = btn.dataset.act;
     if (act === 'font') app.navigate('schrift');
+    else if (act === 'gn-tip') showGoodnotesTip();
     else if (act === 'backup') {
       const d = new Date().toISOString().slice(0, 10);
       const file = new File([exportBackup()], `WriteGPT Backup ${d}.json`, { type: 'application/json' });

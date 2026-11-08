@@ -30,6 +30,9 @@ export const ICONS = {
   sparkle: svg('<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/>'),
   home: svg('<path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/>'),
   plus: svg('<path d="M12 5v14M5 12h14"/>'),
+  eraser: svg('<path d="M21 20H9"/><path d="M4.6 14.6l9-9a2 2 0 0 1 2.8 0l3 3a2 2 0 0 1 0 2.8l-8.2 8.2a1.5 1.5 0 0 1-1.1.4H7.6a1.5 1.5 0 0 1-1.1-.4l-1.9-1.9a2 2 0 0 1 0-2.9z"/><path d="M9.5 9.7l4.8 4.8"/>'),
+  restore: svg('<path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/>'),
+  info: svg('<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>'),
 };
 
 export function icon(name) {

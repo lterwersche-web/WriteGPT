@@ -172,6 +172,155 @@ export function hasGlyph(font, ch) {
   return getVariants(font, ch).length > 0;
 }
 
+// ─────────────────────────────────────────────────────────────
+// Auto-Fix: gezeichnete Buchstaben automatisch angleichen
+// ─────────────────────────────────────────────────────────────
+// Beim Zeichnen landet nicht jeder Buchstabe perfekt auf der Grundlinie
+// und nicht jeder ist gleich groß. Im fertigen Text "hüpft" die Schrift dann.
+// Der Auto-Fix schaut sich ALLE deine Buchstaben an, merkt sich deinen
+// typischen Stil (Durchschnitt = Median) und rückt Ausreißer zurecht.
+// Deine gespeicherten Zeichnungen bleiben dabei unverändert.
+
+// Gruppen von Buchstaben, die gleich hoch sein sollten
+const CATEGORY = {};
+for (const ch of 'acemnorsuvwxäöüi') CATEGORY[ch] = 'x'; // bis zur Mittellinie
+for (const ch of 'bdhkl') CATEGORY[ch] = 'asc'; // mit Oberlänge
+for (const ch of 'ABCDEFGHIKLMNOPRSTUVWXYZÄÖÜ0123456789') CATEGORY[ch] = 'cap';
+for (const ch of 'gpqyj') CATEGORY[ch] = 'desc'; // mit Unterlänge
+CATEGORY.t = 'base'; // nur auf die Grundlinie rücken (Höhe ist beim t sehr unterschiedlich)
+
+/** Ist der Strich nur ein Pünktchen / Mini-Strich? */
+function isMark(s) {
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  for (let i = 0; i < s.length; i += 2) {
+    x0 = Math.min(x0, s[i]); x1 = Math.max(x1, s[i]);
+    y0 = Math.min(y0, s[i + 1]); y1 = Math.max(y1, s[i + 1]);
+  }
+  return strokeLength(s) < 0.12 || Math.hypot(x1 - x0, y1 - y0) < 0.16;
+}
+
+/** Rechteck um den "Körper" des Buchstabens (ohne Punkte) */
+function bodyBox(strokes) {
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  for (const s of strokes) {
+    if (isMark(s)) continue;
+    for (let i = 0; i < s.length; i += 2) {
+      x0 = Math.min(x0, s[i]); x1 = Math.max(x1, s[i]);
+      y0 = Math.min(y0, s[i + 1]); y1 = Math.max(y1, s[i + 1]);
+    }
+  }
+  if (!isFinite(x0)) return null;
+  return { left: x0, right: x1, top: y0, bottom: y1, cx: (x0 + x1) / 2, height: y1 - y0 };
+}
+
+/**
+ * Entfernt "verirrte" Mini-Striche weit weg vom Buchstaben
+ * (z.B. Handballen oder ein versehentlicher Tipp mit dem Pencil).
+ * i-Punkte, ä-Punkte usw. liegen nah genug dran und bleiben.
+ */
+function removeStrays(strokes) {
+  const body = bodyBox(strokes);
+  if (!body) return strokes;
+  const kept = strokes.filter((s) => {
+    if (!isMark(s)) return true;
+    let sx = 0, sy = 0;
+    for (let i = 0; i < s.length; i += 2) { sx += s[i]; sy += s[i + 1]; }
+    const n = s.length / 2;
+    const dx = Math.max(body.left - sx / n, 0, sx / n - body.right);
+    const dy = Math.max(body.top - sy / n, 0, sy / n - body.bottom);
+    return Math.hypot(dx, dy) <= 0.6;
+  });
+  return kept.length === strokes.length ? strokes : kept;
+}
+
+const median = (arr) => {
+  if (arr.length < 3) return null; // zu wenige Daten → lieber nichts ändern
+  const s = [...arr].sort((a, b) => a - b);
+  return s[Math.floor(s.length / 2)];
+};
+const clampNum = (v, a, b) => Math.min(b, Math.max(a, v));
+
+const statsCache = new WeakMap();
+const fixCache = new WeakMap();
+
+/** Dein typischer Stil: Wie groß sind deine Buchstaben im Schnitt, wo ist deine Grundlinie? */
+function fontStats(font) {
+  const cached = statsCache.get(font.glyphs);
+  if (cached && cached.variants === font.variants) return cached;
+  const heights = { x: [], asc: [], cap: [], desc: [] };
+  const bottoms = [];
+  const xTops = [];
+  for (const [ch, list] of Object.entries(font.glyphs)) {
+    const cat = CATEGORY[ch];
+    if (!cat) continue;
+    for (const v of list.slice(0, font.variants)) {
+      const b = v?.strokes?.length && bodyBox(v.strokes);
+      if (!b) continue;
+      if (heights[cat]) heights[cat].push(b.height);
+      if (cat === 'desc') continue;
+      bottoms.push(b.bottom);
+      if (cat === 'x') xTops.push(b.top);
+    }
+  }
+  const stats = {
+    variants: font.variants,
+    height: Object.fromEntries(Object.entries(heights).map(([k, v]) => [k, median(v)])),
+    base: clampNum(median(bottoms) ?? 0, -0.15, 0.15),
+    xTop: median(xTops) ?? -0.5,
+  };
+  statsCache.set(font.glyphs, stats);
+  return stats;
+}
+
+/**
+ * Gibt eine angeglichene Kopie einer Variante zurück:
+ *  1. verirrte Mini-Striche weg
+ *  2. Größe: Ausreißer (mehr als ±12 % vom Durchschnitt) werden angepasst
+ *  3. Höhe: Buchstabe wird auf deine Grundlinie gerückt
+ *     (bei g, p, q, y, j: oben an die Mittellinie)
+ */
+export function fixVariant(font, ch, variant) {
+  const stats = fontStats(font);
+  let cache = fixCache.get(stats);
+  if (!cache) fixCache.set(stats, (cache = new WeakMap()));
+  const hit = cache.get(variant);
+  if (hit) return hit;
+
+  const strokes = removeStrays(variant.strokes);
+  const cat = CATEGORY[ch];
+  const b = cat && bodyBox(strokes);
+  let result = strokes === variant.strokes ? variant : { strokes };
+
+  if (b) {
+    const ref = stats.height[cat];
+    let s = 1;
+    if (ref && b.height > 0.05) {
+      if (b.height > ref * 1.12) s = (ref * 1.12) / b.height;
+      else if (b.height < ref * 0.88) s = (ref * 0.88) / b.height;
+      s = clampNum(s, 0.45, 2);
+    }
+    // Skalieren um einen festen Punkt (unten bzw. bei Unterlängen: oben)
+    const py = cat === 'desc' ? b.top : b.bottom;
+    const dy = cat === 'desc'
+      ? clampNum(stats.xTop - b.top, -0.35, 0.35)
+      : clampNum(stats.base - b.bottom, -0.4, 0.4);
+    if (s !== 1 || Math.abs(dy) > 0.005) {
+      result = {
+        strokes: strokes.map((st) => {
+          const o = new Array(st.length);
+          for (let i = 0; i < st.length; i += 2) {
+            o[i] = b.cx + (st[i] - b.cx) * s;
+            o[i + 1] = py + (st[i + 1] - py) * s + dy;
+          }
+          return o;
+        }),
+      };
+    }
+  }
+  cache.set(variant, result);
+  return result;
+}
+
 /**
  * Findet heraus, wie ein Zeichen geschrieben werden kann.
  * Gibt eine Liste von "Teilen" zurück, z.B.:

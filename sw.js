@@ -4,7 +4,7 @@
 // Strategie "Netz zuerst": Mit Internet gibt's immer die neueste
 // Version, ohne Internet die gespeicherte Kopie aus dem Cache.
 
-const CACHE = 'writegpt-v1';
+const CACHE = 'writegpt-v2';
 const FILES = [
   './',
   './index.html',
@@ -16,6 +16,7 @@ const FILES = [
   './js/glyphs.js',
   './js/random.js',
   './js/markdown.js',
+  './js/edits.js',
   './js/layout.js',
   './js/render.js',
   './js/pdf.js',

@@ -27,14 +27,25 @@ export const DEFAULT_FONT = {
   style: 'print', // print | semi | cursive
   variants: 3, // Wie oft wird jedes Zeichen gezeichnet?
   sets: { math: false, special: false }, // optionale Zeichen
+  autoFix: true, // Buchstaben automatisch auf Grundlinie & Größe angleichen
   glyphs: {}, // { 'a': [variante1, variante2, …] }
 };
+
+// Änderungen in der Vorschau (Radierer & "Neu würfeln").
+// Gemerkt wird pro Zeichen-Nummer (idx) im Text:
+//   erased: { 12: 'gap' }  → Zeichen 12 ist wegradiert, Lücke bleibt
+//           { 12: 'close' } → Zeichen 12 ist weg, Text rückt zusammen
+//   reroll: { 12: 2 }      → Zeichen 12 wurde 2× neu gewürfelt
+//   key:    der Text, zu dem die Nummern gehören (zum Nachführen beim Tippen)
+export const EMPTY_EDITS = { key: '', erased: {}, reroll: {} };
 
 function defaults() {
   return {
     font: structuredClone(DEFAULT_FONT),
     pen: { ...DEFAULT_PEN },
     text: '',
+    edits: structuredClone(EMPTY_EDITS),
+    ui: { eraseMode: 'gap' }, // Radierer: 'gap' = Lücke lassen, 'close' = zusammenrücken
   };
 }
 
@@ -48,6 +59,8 @@ function load() {
       font: { ...base.font, ...saved.font, sets: { ...base.font.sets, ...saved.font?.sets } },
       pen: { ...base.pen, ...saved.pen },
       text: typeof saved.text === 'string' ? saved.text : '',
+      edits: { ...base.edits, ...saved.edits },
+      ui: { ...base.ui, ...saved.ui },
     };
   } catch {
     return defaults();

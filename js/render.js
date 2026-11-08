@@ -2,33 +2,127 @@
 // render.js – Striche & Papier auf ein <canvas> malen
 // ─────────────────────────────────────────────────────────────
 
+// ── Striche in saubere Linien-Stücke ("Runs") verwandeln ─────
+// Warum so aufwendig? Apples Grafik-Engine (Safari, Goodnotes) bekommt
+// Probleme mit sehr vielen winzigen Kurvenstücken und sehr engen Kurven:
+// Dann entstehen kleine LÖCHER im Strich (= die weißen Punkte).
+// Lösung: Wir bauen den Strich aus Stücken, die garantiert "harmlos" sind.
+// Jedes Stück bekommt runde Enden → an den Nahtstellen sieht man nichts.
+
+const CORNER_COS = Math.cos((55 * Math.PI) / 180); // ab 55° Knick = Ecke
+const TIGHT = 0.6; // Kurven enger als 0,6 × Strichdicke werden getrennt
+
+/** Weiche Kurve (zentripetaler Catmull-Rom), die DURCH alle Punkte geht */
+function catmullRom(run, w) {
+  const m = run.length / 2;
+  if (m < 3) return run;
+  const step = Math.max(w * 0.3, 1e-4);
+  const P = (i) => {
+    // Am Anfang/Ende gespiegelte "Phantom-Punkte" → saubere Enden
+    if (i < 0) return [2 * run[0] - run[2], 2 * run[1] - run[3]];
+    if (i >= m) return [2 * run[(m - 1) * 2] - run[(m - 2) * 2], 2 * run[(m - 1) * 2 + 1] - run[(m - 2) * 2 + 1]];
+    return [run[i * 2], run[i * 2 + 1]];
+  };
+  const out = [run[0], run[1]];
+  for (let i = 0; i < m - 1; i++) {
+    const p0 = P(i - 1), p1 = P(i), p2 = P(i + 1), p3 = P(i + 2);
+    const d1 = Math.sqrt(Math.hypot(p1[0] - p0[0], p1[1] - p0[1]));
+    const d2 = Math.sqrt(Math.hypot(p2[0] - p1[0], p2[1] - p1[1]));
+    const d3 = Math.sqrt(Math.hypot(p3[0] - p2[0], p3[1] - p2[1]));
+    // Kontrollpunkte der Bézier-Kurve zwischen p1 und p2
+    const b1 = d1 < 1e-6 ? p1 : [0, 1].map((k) =>
+      (d1 * d1 * p2[k] - d2 * d2 * p0[k] + (2 * d1 * d1 + 3 * d1 * d2 + d2 * d2) * p1[k]) / (3 * d1 * (d1 + d2)));
+    const b2 = d3 < 1e-6 ? p2 : [0, 1].map((k) =>
+      (d3 * d3 * p1[k] - d2 * d2 * p3[k] + (2 * d3 * d3 + 3 * d3 * d2 + d2 * d2) * p2[k]) / (3 * d3 * (d3 + d2)));
+    const chord = d2 * d2;
+    const k = Math.min(12, Math.max(1, Math.ceil(chord / step)));
+    for (let j = 1; j <= k; j++) {
+      const t = j / k, u = 1 - t;
+      out.push(
+        u * u * u * p1[0] + 3 * u * u * t * b1[0] + 3 * u * t * t * b2[0] + t * t * t * p2[0],
+        u * u * u * p1[1] + 3 * u * u * t * b1[1] + 3 * u * t * t * b2[1] + t * t * t * p2[1],
+      );
+    }
+  }
+  return out;
+}
+
+/** Trennt an Stellen, wo die Kurve enger ist als die Strichdicke */
+function splitTight(run, w) {
+  const m = run.length / 2;
+  if (m < 3) return [run];
+  const out = [];
+  let start = 0;
+  for (let i = 1; i < m - 1; i++) {
+    const ax = run[i * 2 - 2], ay = run[i * 2 - 1];
+    const bx = run[i * 2], by = run[i * 2 + 1];
+    const cx = run[i * 2 + 2], cy = run[i * 2 + 3];
+    const cross = Math.abs((bx - ax) * (cy - ay) - (by - ay) * (cx - ax));
+    // Radius des Kreises durch die drei Punkte
+    const r = cross < 1e-12 ? Infinity
+      : (Math.hypot(bx - ax, by - ay) * Math.hypot(cx - bx, cy - by) * Math.hypot(cx - ax, cy - ay)) / (2 * cross);
+    if (r < w * TIGHT) {
+      out.push(run.slice(start * 2, i * 2 + 2));
+      start = i;
+    }
+  }
+  out.push(run.slice(start * 2));
+  return out;
+}
+
 /**
- * Macht aus vielen Punkten eine weiche Kurve.
- * Trick: Wir ziehen die Linie nicht durch die Punkte selbst, sondern
- * durch die Mitte zwischen zwei Punkten – die Punkte werden zu
- * "Magneten" (Kontrollpunkten). So verschwinden Ecken & Zittern.
- *
- * Gibt Befehle zurück: ['M', x, y] = hinsetzen, ['Q', cx, cy, x, y] = Kurve,
- * ['L', x, y] = gerade Linie. Wird für Canvas UND PDF benutzt.
+ * Hauptfunktion: Punkte eines Strichs → Liste von Linien-Stücken.
+ * w = Strichdicke (gleiche Einheit wie die Punkte).
+ * Ein Stück mit nur einem Punkt = ein Punkt (z.B. i-Punkt).
  */
-export function smoothPath(pts) {
-  const n = pts.length / 2;
-  const cmds = [['M', pts[0], pts[1]]];
-  if (n === 1) {
-    cmds.push(['L', pts[0] + 0.001, pts[1]]);
-    return cmds;
+export function strokeRuns(pts, w) {
+  if (pts.length < 2) return [];
+  // 1) Ausdünnen: Punkte, die zu nah am vorherigen liegen, fliegen raus
+  const minSeg = Math.max(w * 0.12, 1e-5);
+  const p = [pts[0], pts[1]];
+  for (let i = 2; i < pts.length; i += 2) {
+    const far = Math.hypot(pts[i] - p[p.length - 2], pts[i + 1] - p[p.length - 1]) >= minSeg;
+    if (far) p.push(pts[i], pts[i + 1]);
+    else if (i === pts.length - 2 && p.length > 2) {
+      // Den letzten Punkt immer behalten (er ist das Strich-Ende)
+      p[p.length - 2] = pts[i];
+      p[p.length - 1] = pts[i + 1];
+    }
   }
-  if (n === 2) {
-    cmds.push(['L', pts[2], pts[3]]);
-    return cmds;
-  }
+  const n = p.length / 2;
+  if (n === 1) return [p];
+
+  // 2) An scharfen Ecken trennen (v, z, k …) → Ecken bleiben spitz
+  const runs = [];
+  let start = 0;
   for (let i = 1; i < n - 1; i++) {
-    const x = pts[i * 2], y = pts[i * 2 + 1];
-    const mx = (x + pts[i * 2 + 2]) / 2, my = (y + pts[i * 2 + 3]) / 2;
-    cmds.push(['Q', x, y, mx, my]);
+    const ax = p[i * 2] - p[i * 2 - 2], ay = p[i * 2 + 1] - p[i * 2 - 1];
+    const bx = p[i * 2 + 2] - p[i * 2], by = p[i * 2 + 3] - p[i * 2 + 1];
+    const cos = (ax * bx + ay * by) / (Math.hypot(ax, ay) * Math.hypot(bx, by) || 1);
+    if (cos < CORNER_COS) {
+      runs.push(p.slice(start * 2, i * 2 + 2));
+      start = i;
+    }
   }
-  cmds.push(['L', pts[(n - 1) * 2], pts[(n - 1) * 2 + 1]]);
-  return cmds;
+  runs.push(p.slice(start * 2));
+
+  // 3) Weich machen + 4) enge Kurven trennen
+  return runs.flatMap((run) => splitTight(catmullRom(run, w), w));
+}
+
+/** Hängt die Linien-Stücke eines Strichs an einen Canvas-Pfad an */
+function traceRuns(ctx, runs, scale, ox, oy) {
+  for (const run of runs) {
+    ctx.moveTo((run[0] - ox) * scale, (run[1] - oy) * scale);
+    if (run.length === 2) {
+      // Einzelner Punkt → winzige Linie, runde Enden machen daraus einen Punkt
+      ctx.lineTo((run[0] - ox) * scale + 0.01, (run[1] - oy) * scale);
+      continue;
+    }
+    for (let i = 2; i < run.length; i += 2) {
+      ctx.lineTo((run[i] - ox) * scale, (run[i + 1] - oy) * scale);
+    }
+  }
 }
 
 /** Zeichnet eine Liste von Strichen (Koordinaten × scale) */
@@ -40,11 +134,7 @@ export function drawStrokes(ctx, strokes, color, scale, ox = 0, oy = 0) {
   for (const st of strokes) {
     ctx.lineWidth = st.w * scale;
     ctx.beginPath();
-    for (const c of smoothPath(st.pts)) {
-      if (c[0] === 'M') ctx.moveTo((c[1] - ox) * scale, (c[2] - oy) * scale);
-      else if (c[0] === 'L') ctx.lineTo((c[1] - ox) * scale, (c[2] - oy) * scale);
-      else ctx.quadraticCurveTo((c[1] - ox) * scale, (c[2] - oy) * scale, (c[3] - ox) * scale, (c[4] - oy) * scale);
-    }
+    traceRuns(ctx, strokeRuns(st.pts, st.w), scale, ox, oy);
     ctx.stroke();
   }
   ctx.restore();
@@ -152,14 +242,17 @@ export function contentBounds(page) {
 
 /**
  * Malt eine komplette Seite.
- * options: scale (Pixel pro mm), paper (Papier ja/nein), missing (Platzhalter zeigen)
+ * options: scale (Pixel pro mm), paper (Papier ja/nein), missing (Platzhalter zeigen),
+ *          ghosts (wegradierte Buchstaben blass zeigen)
  */
-export function renderPage(canvas, page, geo, pen, { scale, paper = true, missing = true }) {
+export function renderPage(canvas, page, geo, pen, { scale, paper = true, missing = true, ghosts = false }) {
   canvas.width = Math.round(geo.width * scale);
   canvas.height = Math.round(geo.height * scale);
   const ctx = canvas.getContext('2d');
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   if (paper) drawPaper(ctx, geo, pen, scale);
+  // Wegradierte Buchstaben ganz blass anzeigen (nur im Radier-Modus)
+  if (ghosts && page.ghosts?.length) drawStrokes(ctx, page.ghosts, 'rgba(120, 130, 150, 0.22)', scale);
   drawStrokes(ctx, page.strokes, pen.color, scale);
   if (missing) drawMissing(ctx, page.missing, scale);
 }

@@ -7,7 +7,7 @@
 // Vorteil: Die Schrift bleibt VEKTOR → in Goodnotes gestochen scharf,
 // egal wie weit man reinzoomt.
 
-import { smoothPath, paperPattern, PAPER_COLORS } from './render.js';
+import { strokeRuns, paperPattern, PAPER_COLORS } from './render.js';
 
 const MM_TO_PT = 72 / 25.4; // PDF rechnet in "Punkt": 1 Zoll = 72 pt
 
@@ -41,7 +41,12 @@ function pageContent(page, geo, pen, withPaper) {
     }
   }
 
-  // Tinte: runde Enden (1 J) und runde Ecken (1 j)
+  // Tinte: runde Enden (1 J) und runde Ecken (1 j).
+  // Jeder Strich besteht aus "harmlosen" Linien-Stücken (siehe strokeRuns),
+  // damit Goodnotes keine Löcher (weiße Punkte) hineinrechnet.
+  // Hier 2 Nachkommastellen, damit nah beieinander liegende Punkte nicht verschmelzen.
+  const IX = (x) => num(x * MM_TO_PT, 2);
+  const IY = (y) => num((H - y) * MM_TO_PT, 2);
   out.push(`${hexToRgb(pen.color).join(' ')} RG 1 J 1 j`);
   let lastW = null;
   for (const st of page.strokes) {
@@ -49,22 +54,19 @@ function pageContent(page, geo, pen, withPaper) {
       out.push(`${num(st.w * MM_TO_PT)} w`);
       lastW = st.w;
     }
-    let cx = 0, cy = 0; // aktuelle Position (für Kurven-Umrechnung)
     const parts = [];
-    for (const c of smoothPath(st.pts)) {
-      if (c[0] === 'M') {
-        parts.push(`${X(c[1])} ${Y(c[2])} m`);
-        [cx, cy] = [c[1], c[2]];
-      } else if (c[0] === 'L') {
-        parts.push(`${X(c[1])} ${Y(c[2])} l`);
-        [cx, cy] = [c[1], c[2]];
-      } else {
-        // PDF kann nur kubische Kurven → quadratische umrechnen
-        const [, qx, qy, x, y] = c;
-        const c1x = cx + (2 / 3) * (qx - cx), c1y = cy + (2 / 3) * (qy - cy);
-        const c2x = x + (2 / 3) * (qx - x), c2y = y + (2 / 3) * (qy - y);
-        parts.push(`${X(c1x)} ${Y(c1y)} ${X(c2x)} ${Y(c2y)} ${X(x)} ${Y(y)} c`);
-        [cx, cy] = [x, y];
+    for (const run of strokeRuns(st.pts, st.w)) {
+      const first = `${IX(run[0])} ${IY(run[1])}`;
+      parts.push(`${first} m`);
+      if (run.length === 2) {
+        parts.push(`${first} l`); // einzelner Punkt → runder Punkt
+        continue;
+      }
+      let last = first;
+      for (let i = 2; i < run.length; i += 2) {
+        const pt = `${IX(run[i])} ${IY(run[i + 1])}`;
+        if (pt !== last) parts.push(`${pt} l`);
+        last = pt;
       }
     }
     out.push(parts.join(' ') + ' S');
