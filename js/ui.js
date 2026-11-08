@@ -87,6 +87,74 @@ export function infoDialog({ title, body, confirm = 'Alles klar' }) {
   });
 }
 
+/** Dialog mit Eingabefeld. Gibt den Text zurück – oder null bei "Abbrechen". */
+export function promptDialog({ title, message = '', value = '', placeholder = '', confirm = 'OK' }) {
+  return new Promise((resolve) => {
+    const dlg = document.createElement('dialog');
+    dlg.className = 'dialog';
+    dlg.innerHTML = `
+      <h3></h3>
+      ${message ? '<p></p>' : ''}
+      <input class="text-field dialog-input" type="text" maxlength="40">
+      <div class="dialog-actions">
+        <button class="btn" value="cancel">Abbrechen</button>
+        <button class="btn btn-primary" value="ok"></button>
+      </div>`;
+    dlg.querySelector('h3').textContent = title;
+    if (message) dlg.querySelector('p').textContent = message;
+    const input = dlg.querySelector('input');
+    Object.assign(input, { value, placeholder });
+    const [btnCancel, btnOk] = dlg.querySelectorAll('button');
+    btnOk.textContent = confirm;
+    const close = (result) => {
+      dlg.close();
+      dlg.remove();
+      resolve(result);
+    };
+    btnCancel.onclick = () => close(null);
+    btnOk.onclick = () => close(input.value.trim() || null);
+    input.onkeydown = (e) => {
+      if (e.key === 'Enter') close(input.value.trim() || null);
+    };
+    dlg.addEventListener('cancel', (e) => {
+      e.preventDefault();
+      close(null);
+    });
+    document.body.append(dlg);
+    dlg.showModal();
+    input.focus();
+    input.select();
+  });
+}
+
+/** Kurzanleitung: In 3 Schritten zur Handschrift in Goodnotes */
+export function showOnboarding() {
+  return infoDialog({
+    title: 'Willkommen bei WriteGPT 👋',
+    confirm: 'Los geht’s',
+    body: `
+      <p>Jeder Text in <strong>deiner</strong> Handschrift – in 3 Schritten:</p>
+      <ol class="onboarding-steps">
+        <li><span class="ob-icon">${icon('font')}</span><div><strong>Buchstaben zeichnen</strong>
+          <span>Unter „Meine Schrift“ jedes Zeichen einmal mit dem Apple Pencil zeichnen (ca. 15–20 Min., wird automatisch gespeichert).</span></div></li>
+        <li><span class="ob-icon">${icon('paste')}</span><div><strong>Text einfügen</strong>
+          <span>Unter „Schreiben“ z.B. eine ChatGPT-Antwort einfügen – Überschriften, Listen & Formeln werden automatisch umgewandelt.</span></div></li>
+        <li><span class="ob-icon">${icon('copy')}</span><div><strong>Ab nach Goodnotes</strong>
+          <span>„Kopieren“ und in Goodnotes einsetzen – oder als PDF teilen. Vorher kannst du noch radieren oder Wörter neu würfeln.</span></div></li>
+      </ol>`,
+  });
+}
+
+/** Übersicht der Tastenkürzel */
+export const SHORTCUTS = [
+  ['⌘ ⇧ C', 'Text als Bild kopieren'],
+  ['⌘ ⇧ S', 'Als PDF teilen'],
+  ['⌘ E', 'Radierer an/aus'],
+  ['⌘ Z', 'Radieren/Würfeln rückgängig (außerhalb des Textfelds)'],
+  ['Esc', 'Menüs schließen'],
+  ['↵ / ← →', 'Beim Zeichnen: weiter / vor & zurück'],
+];
+
 /** Erklärt, warum Goodnotes eingefügte Schrift nicht radieren kann – und was trotzdem geht */
 export function showGoodnotesTip() {
   return infoDialog({

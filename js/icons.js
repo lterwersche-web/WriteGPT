@@ -32,6 +32,9 @@ export const ICONS = {
   plus: svg('<path d="M12 5v14M5 12h14"/>'),
   eraser: svg('<path d="M21 20H9"/><path d="M4.6 14.6l9-9a2 2 0 0 1 2.8 0l3 3a2 2 0 0 1 0 2.8l-8.2 8.2a1.5 1.5 0 0 1-1.1.4H7.6a1.5 1.5 0 0 1-1.1-.4l-1.9-1.9a2 2 0 0 1 0-2.9z"/><path d="M9.5 9.7l4.8 4.8"/>'),
   restore: svg('<path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/>'),
+  docs: svg('<path d="M8 3h8l4 4v11a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M16 3v4h4"/><path d="M4 7v12a2 2 0 0 0 2 2h9"/>'),
+  eye: svg('<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>'),
+  keyboard: svg('<rect x="2" y="6" width="20" height="12" rx="2.5"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/>'),
   info: svg('<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>'),
 };
 

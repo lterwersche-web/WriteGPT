@@ -125,16 +125,86 @@ function traceRuns(ctx, runs, scale, ox, oy) {
   }
 }
 
-/** Zeichnet eine Liste von Strichen (Koordinaten × scale) */
-export function drawStrokes(ctx, strokes, color, scale, ox = 0, oy = 0) {
+// ── Füller-Effekt ────────────────────────────────────────────
+// Ein Füller hat eine schräge, breite Feder. Zieht man in Richtung der
+// Feder, wird der Strich dünn – quer dazu wird er dick.
+// Wir teilen jeden Strich in kleine Stücke und geben jedem Stück je nach
+// Richtung eine von 6 Dicken ("Stufen"). Gleiche Stufen werden zusammen gezeichnet.
+const NIB_ANGLE = (-40 * Math.PI) / 180; // Federwinkel (nach rechts oben)
+const NIB_LEVELS = 5;
+
+export function nibWidth(w, level) {
+  return w * (0.35 + (0.95 * level) / NIB_LEVELS);
+}
+
+/** Stücke nach Dicken-Stufe sortieren: Map(stufe → [x0,y0,x1,y1, …]) */
+export function nibBuckets(runs) {
+  const buckets = new Map();
+  const add = (lvl, a, b, c, d) => {
+    if (!buckets.has(lvl)) buckets.set(lvl, []);
+    buckets.get(lvl).push(a, b, c, d);
+  };
+  for (const run of runs) {
+    if (run.length === 2) {
+      add(3, run[0], run[1], run[0], run[1]); // einzelner Punkt
+      continue;
+    }
+    for (let i = 2; i < run.length; i += 2) {
+      const f = Math.abs(Math.sin(Math.atan2(run[i + 1] - run[i - 1], run[i] - run[i - 2]) - NIB_ANGLE));
+      add(Math.round(f * NIB_LEVELS), run[i - 2], run[i - 1], run[i], run[i + 1]);
+    }
+  }
+  return buckets;
+}
+
+/**
+ * Zeichnet eine Liste von Strichen (Koordinaten × scale).
+ * color = Standardfarbe (ein Strich kann eine eigene Farbe st.c haben)
+ * nib   = 'fineliner' (gleich dick) oder 'fountain' (Füller)
+ */
+export function drawStrokes(ctx, strokes, color, scale, ox = 0, oy = 0, nib = 'fineliner') {
   ctx.save();
-  ctx.strokeStyle = color;
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
   for (const st of strokes) {
+    ctx.strokeStyle = st.c || color;
+    const runs = strokeRuns(st.pts, st.w);
+    if (nib === 'fountain') {
+      for (const [lvl, seg] of nibBuckets(runs)) {
+        ctx.lineWidth = nibWidth(st.w, lvl) * scale;
+        ctx.beginPath();
+        for (let i = 0; i < seg.length; i += 4) {
+          ctx.moveTo((seg[i] - ox) * scale, (seg[i + 1] - oy) * scale);
+          ctx.lineTo((seg[i + 2] - ox) * scale + (seg[i] === seg[i + 2] && seg[i + 1] === seg[i + 3] ? 0.01 : 0), (seg[i + 3] - oy) * scale);
+        }
+        ctx.stroke();
+      }
+      continue;
+    }
     ctx.lineWidth = st.w * scale;
     ctx.beginPath();
-    traceRuns(ctx, strokeRuns(st.pts, st.w), scale, ox, oy);
+    traceRuns(ctx, runs, scale, ox, oy);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+// ── Textmarker ───────────────────────────────────────────────
+export const MARKER_ALPHA = 0.5; // durchscheinend wie ein echter Textmarker
+
+/** Textmarker-Streifen (werden VOR der Schrift gemalt, damit die Tinte darüber liegt) */
+export function drawMarkers(ctx, markers, scale, ox = 0, oy = 0) {
+  if (!markers?.length) return;
+  ctx.save();
+  ctx.globalAlpha = MARKER_ALPHA;
+  ctx.lineCap = 'butt'; // Textmarker haben eine flache Spitze
+  ctx.lineJoin = 'round';
+  for (const m of markers) {
+    ctx.strokeStyle = m.c;
+    ctx.lineWidth = m.w * scale;
+    ctx.beginPath();
+    ctx.moveTo((m.pts[0] - ox) * scale, (m.pts[1] - oy) * scale);
+    for (let i = 2; i < m.pts.length; i += 2) ctx.lineTo((m.pts[i] - ox) * scale, (m.pts[i + 1] - oy) * scale);
     ctx.stroke();
   }
   ctx.restore();
@@ -144,6 +214,7 @@ export const PAPER_COLORS = {
   line: '#bccbe0',
   grid: '#d6dfeb',
   dot: '#a9b6c9',
+  margin: '#e8a6a6', // rote Randlinie wie im Schulheft
 };
 
 /**
@@ -173,14 +244,16 @@ export function paperPattern(geo, pen) {
       }
     }
   }
-  return { lines, dots, color: pen.paper === 'grid' ? PAPER_COLORS.grid : PAPER_COLORS.line };
+  // Randlinie: senkrecht, kurz vor dem Text-Anfang
+  const marginLine = pen.paperMargin ? [margin.left - 3 * (width / 210), 0, margin.left - 3 * (width / 210), height] : null;
+  return { lines, dots, marginLine, color: pen.paper === 'grid' ? PAPER_COLORS.grid : PAPER_COLORS.line };
 }
 
 export function drawPaper(ctx, geo, pen, scale) {
   ctx.save();
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, geo.width * scale, geo.height * scale);
-  const { lines, dots, color } = paperPattern(geo, pen);
+  const { lines, dots, marginLine, color } = paperPattern(geo, pen);
   ctx.strokeStyle = color;
   ctx.lineWidth = Math.max(1, 0.2 * scale);
   ctx.beginPath();
@@ -189,6 +262,14 @@ export function drawPaper(ctx, geo, pen, scale) {
     ctx.lineTo(x2 * scale, y2 * scale);
   }
   ctx.stroke();
+  if (marginLine) {
+    ctx.strokeStyle = PAPER_COLORS.margin;
+    ctx.lineWidth = Math.max(1, 0.3 * scale);
+    ctx.beginPath();
+    ctx.moveTo(marginLine[0] * scale, marginLine[1] * scale);
+    ctx.lineTo(marginLine[2] * scale, marginLine[3] * scale);
+    ctx.stroke();
+  }
   ctx.fillStyle = PAPER_COLORS.dot;
   const r = Math.max(0.8, 0.28 * scale);
   for (const [x, y] of dots) {
@@ -227,8 +308,8 @@ export function drawMissing(ctx, missing, scale, ox = 0, oy = 0) {
 /** Rechteck um alle Striche einer Seite (in mm) – zum Zuschneiden */
 export function contentBounds(page) {
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  for (const st of page.strokes) {
-    const r = st.w / 2;
+  for (const st of [...page.strokes, ...(page.markers ?? [])]) {
+    const r = (st.w / 2) * 1.3; // etwas Luft (Füller kann dicker werden)
     for (let i = 0; i < st.pts.length; i += 2) {
       minX = Math.min(minX, st.pts[i] - r);
       maxX = Math.max(maxX, st.pts[i] + r);
@@ -251,8 +332,11 @@ export function renderPage(canvas, page, geo, pen, { scale, paper = true, missin
   const ctx = canvas.getContext('2d');
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   if (paper) drawPaper(ctx, geo, pen, scale);
+  drawMarkers(ctx, page.markers, scale);
   // Wegradierte Buchstaben ganz blass anzeigen (nur im Radier-Modus)
-  if (ghosts && page.ghosts?.length) drawStrokes(ctx, page.ghosts, 'rgba(120, 130, 150, 0.22)', scale);
-  drawStrokes(ctx, page.strokes, pen.color, scale);
+  if (ghosts && page.ghosts?.length) {
+    drawStrokes(ctx, page.ghosts.map((g) => ({ ...g, c: null })), 'rgba(120, 130, 150, 0.22)', scale);
+  }
+  drawStrokes(ctx, page.strokes, pen.color, scale, 0, 0, pen.nib);
   if (missing) drawMissing(ctx, page.missing, scale);
 }

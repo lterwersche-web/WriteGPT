@@ -4,7 +4,7 @@
 // Neu: Radierer (Buchstaben wegwischen) und Wort-Menü (Wort antippen →
 // neu würfeln, wegradieren, wiederherstellen, Buchstabe neu zeichnen).
 
-import { getState, update, subscribe, EMPTY_EDITS } from '../state.js';
+import { getState, update, subscribe, EMPTY_EDITS, newDoc, switchDoc, deleteDoc, docTitle } from '../state.js';
 import { parseChatText } from '../markdown.js';
 import { layoutDocument, PAGE_FORMATS } from '../layout.js';
 import { renderPage } from '../render.js';
@@ -23,6 +23,34 @@ const INK_COLORS = [
   { value: '#1f7a4a', label: 'Grün' },
 ];
 
+const MARKER_COLORS = [
+  { value: '#ffd60a', label: 'Gelb' },
+  { value: '#7ee081', label: 'Grün' },
+  { value: '#ff8fc7', label: 'Pink' },
+  { value: '#8ecbff', label: 'Blau' },
+  { value: '#ffb35c', label: 'Orange' },
+];
+
+const HEADING_COLORS = [
+  { value: '#1f4fbf', label: 'Blau' },
+  { value: '#c62f2f', label: 'Rot' },
+  { value: '#1f7a4a', label: 'Grün' },
+  { value: '#6e3fc4', label: 'Lila' },
+];
+
+// Beispiel zum Ausprobieren – zeigt alle Lernzettel-Funktionen
+const SAMPLE = `# Photosynthese
+
+Pflanzen wandeln **Lichtenergie** in chemische Energie um.
+
+## Das Wichtigste
+
+1. Findet in den ==Chloroplasten== statt
+2. Braucht Licht, Wasser und CO₂
+3. Es entstehen Zucker und Sauerstoff
+
+> Merke: 6 CO₂ + 6 H₂O → C₆H₁₂O₆ + 6 O₂`;
+
 export function createWriteView(app) {
   const el = document.createElement('section');
   el.className = 'view view-write';
@@ -32,6 +60,7 @@ export function createWriteView(app) {
         <div class="card-head">
           <h2>Dein Text</h2>
           <div class="head-actions">
+            <button class="btn btn-ghost btn-sm" data-act="docs" aria-expanded="false">${icon('docs')}<span>Meine Texte</span></button>
             <button class="btn btn-ghost btn-sm" data-act="paste">${icon('paste')}<span>Einfügen</span></button>
             <button class="btn btn-ghost btn-sm" data-act="clear">${icon('trash')}<span>Leeren</span></button>
           </div>
@@ -39,7 +68,10 @@ export function createWriteView(app) {
         <textarea class="text-input" spellcheck="false"
           placeholder="Füg hier deinen Text ein – zum Beispiel eine Antwort von ChatGPT.&#10;&#10;**Fett**, # Überschriften und - Listen werden automatisch umgewandelt."></textarea>
         <div class="missing-banner" hidden></div>
-        <div class="card-foot"><span class="muted char-count">0 Zeichen</span></div>
+        <div class="card-foot">
+          <span class="muted char-count">0 Wörter</span>
+          <button class="btn btn-ghost btn-xs" data-act="sample" hidden>${icon('sparkle')}<span>Beispiel ausprobieren</span></button>
+        </div>
       </div>
 
       <div class="card preview-card">
@@ -92,6 +124,7 @@ export function createWriteView(app) {
     <div class="eraser-cursor" hidden></div>
 
     <div class="popover pen-popover" hidden role="dialog" aria-label="Stift und Papier"></div>
+    <div class="popover docs-popover" hidden role="dialog" aria-label="Meine Texte"></div>
   `;
 
   const $ = (s) => el.querySelector(s);
@@ -103,6 +136,7 @@ export function createWriteView(app) {
   const cursorEl = $('.eraser-cursor');
   const menuEl = $('.word-menu');
   const highlightEl = $('.word-highlight');
+  const docsEl = $('.docs-popover');
 
   textarea.value = getState().text;
 
@@ -162,10 +196,11 @@ export function createWriteView(app) {
     const hasFont = Object.keys(font.glyphs).length > 0;
     $('.empty-state').hidden = hasFont;
     scrollEl.hidden = !hasFont;
-    $('.char-count').textContent = `${text.length.toLocaleString('de-DE')} Zeichen`;
-
     layout = compute();
     const n = layout.pages.length;
+    const words = text.trim() ? text.trim().split(/\s+/).length : 0;
+    $('.char-count').textContent = `${words.toLocaleString('de-DE')} ${words === 1 ? 'Wort' : 'Wörter'} · ${n} ${n === 1 ? 'Seite' : 'Seiten'}`;
+    $('[data-act="sample"]').hidden = !!text.trim();
     $('.page-count').textContent = `${n} ${n === 1 ? 'Seite' : 'Seiten'}`;
     renderMissing(layout.missingChars);
     paintEraserBar();
@@ -503,101 +538,212 @@ export function createWriteView(app) {
     if (menuWord) closeWordMenu();
   });
 
-  // ── Stift & Papier (Popover) ─────────────────────────────
-  function buildPenPanel() {
-    const { pen } = getState();
-    const setPen = (patch) => update({ pen: { ...getState().pen, ...patch } });
-    popover.innerHTML = `
-      <div class="popover-head">
-        <h3>Stift &amp; Papier</h3>
-        <button class="btn btn-icon btn-ghost" data-act="close-pen" aria-label="Schließen">${icon('close')}</button>
-      </div>
-      <div class="popover-body">
-        <section><h4>Tinte</h4><div class="swatches"></div><div class="slot-width"></div></section>
-        <section><h4>Größe &amp; Abstände</h4><div class="slot-sizes"></div></section>
-        <section><h4>Papier</h4><div class="slot-paper"></div></section>
-        <button class="btn btn-ghost btn-sm reset-pen">Standard wiederherstellen</button>
-      </div>`;
-
-    // Farben
-    const swatches = popover.querySelector('.swatches');
-    const paintSwatches = () => {
-      const c = getState().pen.color.toLowerCase();
-      for (const s of swatches.querySelectorAll('.swatch')) {
-        s.classList.toggle('active', s.dataset.color === c || (s.classList.contains('swatch-custom') && !INK_COLORS.some((i) => i.value === c)));
+  // ── Stift & Papier (Popover mit 3 Tabs) ──────────────────
+  /** Farbkreise zum Antippen. extra: { none: 'Label' } für "keine eigene Farbe", custom: true für Farbwähler */
+  function swatchRow(colors, current, onPick, { none = null, custom = false } = {}) {
+    const row = document.createElement('div');
+    row.className = 'swatches';
+    const paint = (value) => {
+      for (const sw of row.querySelectorAll('.swatch')) {
+        const isCustom = sw.classList.contains('swatch-custom');
+        const known = colors.some((c) => c.value === value) || (none && value === '');
+        sw.classList.toggle('active', sw.dataset.color === value || (isCustom && !known));
       }
     };
-    for (const c of INK_COLORS) {
+    const pick = (value) => {
+      onPick(value);
+      paint(value);
+    };
+    if (none) {
+      const b = document.createElement('button');
+      b.className = 'swatch swatch-none';
+      b.dataset.color = '';
+      b.title = none;
+      b.setAttribute('aria-label', none);
+      b.textContent = 'Aa';
+      b.onclick = () => pick('');
+      row.append(b);
+    }
+    for (const c of colors) {
       const b = document.createElement('button');
       b.className = 'swatch';
       b.dataset.color = c.value;
       b.style.setProperty('--c', c.value);
       b.title = c.label;
       b.setAttribute('aria-label', c.label);
-      b.onclick = () => {
-        setPen({ color: c.value });
-        paintSwatches();
-      };
-      swatches.append(b);
+      b.onclick = () => pick(c.value);
+      row.append(b);
     }
-    const custom = document.createElement('label');
-    custom.className = 'swatch swatch-custom';
-    custom.title = 'Eigene Farbe';
-    custom.innerHTML = `${icon('plus')}<input type="color" aria-label="Eigene Farbe">`;
-    const colorInput = custom.querySelector('input');
-    colorInput.value = pen.color;
-    colorInput.oninput = () => {
-      setPen({ color: colorInput.value });
-      paintSwatches();
-    };
-    swatches.append(custom);
-    paintSwatches();
+    if (custom) {
+      const label = document.createElement('label');
+      label.className = 'swatch swatch-custom';
+      label.title = 'Eigene Farbe';
+      label.innerHTML = `${icon('plus')}<input type="color" aria-label="Eigene Farbe">`;
+      const input = label.querySelector('input');
+      input.value = current || '#1c1c1e';
+      input.oninput = () => pick(input.value);
+      row.append(label);
+    }
+    paint(current ?? '');
+    return row;
+  }
 
-    popover.querySelector('.slot-width').append(
-      slider({ label: 'Stiftdicke', min: 0.2, max: 1.4, step: 0.05, value: pen.width, format: (v) => `${de(v, 2)} mm`, onInput: (v) => setPen({ width: v }) }),
-    );
+  function toggleRow(label, value, onChange, hint = '') {
+    const row = document.createElement('div');
+    row.className = 'toggle-row';
+    row.innerHTML = `<span><span class="toggle-label"></span>${hint ? '<small></small>' : ''}</span>`;
+    row.querySelector('.toggle-label').textContent = label;
+    if (hint) row.querySelector('small').textContent = hint;
+    row.append(toggle(value, onChange, label));
+    return row;
+  }
 
-    popover.querySelector('.slot-sizes').append(
-      slider({ label: 'Schriftgröße', min: 2.5, max: 10, step: 0.1, value: pen.size, format: (v) => `${de(v)} mm`, onInput: (v) => setPen({ size: v }) }),
-      slider({ label: 'Zeilenabstand', min: 5, max: 18, step: 0.1, value: pen.lineHeight, format: (v) => `${de(v)} mm`, onInput: (v) => setPen({ lineHeight: v }) }),
-      slider({ label: 'Buchstabenabstand', min: -0.15, max: 0.4, step: 0.01, value: pen.letterSpacing, format: (v) => (v === 0 ? 'normal' : v < 0 ? 'enger' : 'weiter'), onInput: (v) => setPen({ letterSpacing: v }) }),
-      slider({ label: 'Wortabstand', min: 0.25, max: 1.2, step: 0.01, value: pen.wordSpacing, format: (v) => `${Math.round(v * 100)} %`, onInput: (v) => setPen({ wordSpacing: v }) }),
-      slider({ label: 'Natürlichkeit', min: 0, max: 1, step: 0.01, value: pen.jitter, format: (v) => (v < 0.05 ? 'sauber' : `${Math.round(v * 100)} %`), onInput: (v) => setPen({ jitter: v }) }),
-    );
+  function section(title, ...children) {
+    const sec = document.createElement('section');
+    sec.innerHTML = `<h4>${title}</h4>`;
+    sec.append(...children);
+    return sec;
+  }
 
-    const paperSlot = popover.querySelector('.slot-paper');
-    paperSlot.append(
+  function buildPenPanel() {
+    const { pen, ui } = getState();
+    const setPen = (patch) => update({ pen: { ...getState().pen, ...patch } });
+    const tab = ui.penTab ?? 'pen';
+    popover.innerHTML = `
+      <div class="popover-head">
+        <h3>Stift &amp; Papier</h3>
+        <button class="btn btn-icon btn-ghost" data-act="close-pen" aria-label="Schließen">${icon('close')}</button>
+      </div>
+      <div class="popover-tabs"></div>
+      <div class="popover-body"></div>`;
+    const body = popover.querySelector('.popover-body');
+
+    popover.querySelector('.popover-tabs').append(
       segmented(
         [
-          { value: 'blank', label: 'Blanko' },
-          { value: 'lined', label: 'Liniert' },
-          { value: 'grid', label: 'Kariert' },
-          { value: 'dots', label: 'Punkte' },
+          { value: 'pen', label: 'Stift' },
+          { value: 'page', label: 'Seite' },
+          { value: 'study', label: 'Lernzettel' },
         ],
-        pen.paper,
-        (v) => setPen({ paper: v }),
-      ),
-      segmented(
-        Object.entries(PAGE_FORMATS).map(([value, f]) => ({ value, label: f.label })),
-        pen.format,
-        (v) => setPen({ format: v }),
+        tab,
+        (v) => {
+          update({ ui: { ...getState().ui, penTab: v } });
+          buildPenPanel();
+        },
       ),
     );
-    const pdfRow = document.createElement('div');
-    pdfRow.className = 'toggle-row';
-    pdfRow.innerHTML = '<span>Papier-Linien im PDF</span>';
-    pdfRow.append(toggle(pen.paperInPdf, (v) => setPen({ paperInPdf: v }), 'Papier-Linien im PDF'));
-    paperSlot.append(pdfRow);
 
-    popover.querySelector('.reset-pen').onclick = () => {
+    if (tab === 'pen') {
+      body.append(
+        section(
+          'Tinte',
+          swatchRow(INK_COLORS, pen.color, (v) => setPen({ color: v }), { custom: true }),
+          segmented(
+            [
+              { value: 'fineliner', label: 'Fineliner' },
+              { value: 'fountain', label: 'Füller' },
+            ],
+            pen.nib ?? 'fineliner',
+            (v) => setPen({ nib: v }),
+          ),
+          slider({ label: 'Stiftdicke', min: 0.2, max: 1.4, step: 0.05, value: pen.width, format: (v) => `${de(v, 2)} mm`, onInput: (v) => setPen({ width: v }) }),
+        ),
+        section(
+          'Größe &amp; Abstände',
+          slider({ label: 'Schriftgröße', min: 2.5, max: 10, step: 0.1, value: pen.size, format: (v) => `${de(v)} mm`, onInput: (v) => setPen({ size: v }) }),
+          slider({ label: 'Zeilenabstand', min: 5, max: 18, step: 0.1, value: pen.lineHeight, format: (v) => `${de(v)} mm`, onInput: (v) => setPen({ lineHeight: v }) }),
+          slider({ label: 'Buchstabenabstand', min: -0.15, max: 0.4, step: 0.01, value: pen.letterSpacing, format: (v) => (v === 0 ? 'normal' : v < 0 ? 'enger' : 'weiter'), onInput: (v) => setPen({ letterSpacing: v }) }),
+          slider({ label: 'Wortabstand', min: 0.25, max: 1.2, step: 0.01, value: pen.wordSpacing, format: (v) => `${Math.round(v * 100)} %`, onInput: (v) => setPen({ wordSpacing: v }) }),
+          slider({ label: 'Natürlichkeit', min: 0, max: 1, step: 0.01, value: pen.jitter, format: (v) => (v < 0.05 ? 'sauber' : `${Math.round(v * 100)} %`), onInput: (v) => setPen({ jitter: v }) }),
+        ),
+      );
+    }
+
+    if (tab === 'page') {
+      const header = document.createElement('input');
+      header.type = 'text';
+      header.className = 'text-field';
+      header.placeholder = 'Kopfzeile, z.B. Bio – Photosynthese';
+      header.value = pen.headerText ?? '';
+      header.maxLength = 60;
+      header.setAttribute('aria-label', 'Kopfzeile');
+      header.oninput = () => setPen({ headerText: header.value });
+      body.append(
+        section(
+          'Papier',
+          segmented(
+            [
+              { value: 'blank', label: 'Blanko' },
+              { value: 'lined', label: 'Liniert' },
+              { value: 'grid', label: 'Kariert' },
+              { value: 'dots', label: 'Punkte' },
+            ],
+            pen.paper,
+            (v) => setPen({ paper: v }),
+          ),
+          segmented(
+            Object.entries(PAGE_FORMATS).map(([value, f]) => ({ value, label: f.label })),
+            pen.format,
+            (v) => setPen({ format: v }),
+          ),
+          toggleRow('Randlinie wie im Heft', !!pen.paperMargin, (v) => setPen({ paperMargin: v })),
+          toggleRow('Papier-Linien im PDF', pen.paperInPdf, (v) => setPen({ paperInPdf: v })),
+        ),
+        section(
+          'Kopfzeile &amp; Seitenzahlen',
+          header,
+          toggleRow('Datum oben rechts', !!pen.headerDate, (v) => setPen({ headerDate: v })),
+          toggleRow('Seitenzahlen', !!pen.pageNumbers, (v) => setPen({ pageNumbers: v })),
+          toggleRow('--- startet neue Seite', !!pen.hrPageBreak, (v) => setPen({ hrPageBreak: v }), 'Praktisch für Karteikarten: eine Karte pro Abschnitt'),
+        ),
+      );
+    }
+
+    if (tab === 'study') {
+      const help = document.createElement('div');
+      help.className = 'syntax-help';
+      help.innerHTML = `
+        <div><code>**Text**</code><span>fett – so wie oben eingestellt</span></div>
+        <div><code>==Text==</code><span>Textmarker</span></div>
+        <div><code>&gt; Text</code><span>Merkkasten</span></div>
+        <div><code>---</code><span>Trennlinie (oder neue Seite)</span></div>`;
+      body.append(
+        section(
+          'Fett wird zu …',
+          segmented(
+            [
+              { value: 'thick', label: 'Dicker' },
+              { value: 'marker', label: 'Textmarker' },
+              { value: 'underline', label: 'Unterstrichen' },
+            ],
+            pen.boldStyle ?? 'thick',
+            (v) => setPen({ boldStyle: v }),
+          ),
+        ),
+        section('Textmarker-Farbe', swatchRow(MARKER_COLORS, pen.markerColor, (v) => setPen({ markerColor: v }))),
+        section(
+          'Überschriften',
+          swatchRow(HEADING_COLORS, pen.headingColor ?? '', (v) => setPen({ headingColor: v }), { none: 'Wie die Tinte' }),
+          toggleRow('Überschriften zentrieren', !!pen.centerHeadings, (v) => setPen({ centerHeadings: v })),
+        ),
+        section('So schreibst du das im Text', help),
+      );
+    }
+
+    const reset = document.createElement('button');
+    reset.className = 'btn btn-ghost btn-sm reset-pen';
+    reset.textContent = 'Standard wiederherstellen';
+    reset.onclick = () => {
       app.resetPen();
       buildPenPanel();
     };
+    body.append(reset);
     popover.querySelector('[data-act="close-pen"]').onclick = () => setPopover(false);
   }
 
   function setPopover(open) {
     if (open) {
+      if (!docsEl.hidden) setDocsOpen(false);
       buildPenPanel();
       if (eraserOn) setEraser(false);
       closeWordMenu();
@@ -607,10 +753,119 @@ export function createWriteView(app) {
     $('[data-act="pen"]').classList.toggle('active', open);
   }
 
+  // ── Meine Texte ──────────────────────────────────────────
+  /** "heute, 14:32" / "gestern" / "3.11." */
+  function when(ts) {
+    const d = new Date(ts);
+    const today = new Date();
+    const days = Math.round((new Date(today.toDateString()) - new Date(d.toDateString())) / 86400000);
+    const time = d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+    if (days === 0) return `heute, ${time}`;
+    if (days === 1) return `gestern, ${time}`;
+    return `${d.getDate()}.${d.getMonth() + 1}.${d.getFullYear() === today.getFullYear() ? '' : d.getFullYear()}`;
+  }
+
+  function buildDocs() {
+    const { docs, docId } = getState();
+    const sorted = [...docs].sort((a, b) => b.updated - a.updated);
+    docsEl.innerHTML = `
+      <div class="popover-head">
+        <h3>Meine Texte</h3>
+        <div class="head-actions">
+          <button class="btn btn-sm btn-primary" data-act="doc-new">${icon('plus')}<span>Neu</span></button>
+          <button class="btn btn-icon btn-ghost" data-act="close-docs" aria-label="Schließen">${icon('close')}</button>
+        </div>
+      </div>
+      <div class="doc-list" role="list"></div>
+      <p class="docs-note">Alle Texte werden automatisch gespeichert – inklusive Radierungen.</p>`;
+    const list = docsEl.querySelector('.doc-list');
+    for (const d of sorted) {
+      const row = document.createElement('div');
+      row.className = `doc-row${d.id === docId ? ' active' : ''}`;
+      row.setAttribute('role', 'listitem');
+      const words = d.text.trim() ? d.text.trim().split(/\s+/).length : 0;
+      row.innerHTML = `
+        <button class="doc-open" data-id="${esc(d.id)}">
+          <span class="doc-title"></span>
+          <span class="doc-meta">${esc(when(d.updated))} · ${words} ${words === 1 ? 'Wort' : 'Wörter'}</span>
+        </button>
+        <button class="btn btn-icon btn-ghost doc-delete" data-id="${esc(d.id)}" aria-label="Text löschen">${icon('trash')}</button>`;
+      row.querySelector('.doc-title').textContent = docTitle(d.text);
+      list.append(row);
+    }
+  }
+
+  function setDocsOpen(open) {
+    if (open) {
+      setPopover(false);
+      if (eraserOn) setEraser(false);
+      buildDocs();
+      // Unter dem Button anzeigen
+      const r = $('[data-act="docs"]').getBoundingClientRect();
+      docsEl.style.top = `${r.bottom + 8}px`;
+      docsEl.style.left = `${Math.max(12, Math.min(r.left, window.innerWidth - 372))}px`;
+    }
+    docsEl.hidden = !open;
+    $('[data-act="docs"]').setAttribute('aria-expanded', open);
+    $('[data-act="docs"]').classList.toggle('active', open);
+  }
+
+  docsEl.addEventListener('click', async (e) => {
+    const open = e.target.closest('.doc-open');
+    const del = e.target.closest('.doc-delete');
+    if (e.target.closest('[data-act="close-docs"]')) setDocsOpen(false);
+    else if (e.target.closest('[data-act="doc-new"]')) {
+      history.length = 0;
+      newDoc();
+      setDocsOpen(false);
+      textarea.focus();
+      toast('Neuer Text angelegt.', 'success');
+    } else if (open) {
+      history.length = 0;
+      switchDoc(open.dataset.id);
+      setDocsOpen(false);
+    } else if (del) {
+      const doc = getState().docs.find((d) => d.id === del.dataset.id);
+      if (doc?.text.trim()) {
+        const ok = await confirmDialog({ title: 'Text löschen?', message: `„${docTitle(doc.text)}“ wird gelöscht.`, confirm: 'Löschen', danger: true });
+        if (!ok) return;
+      }
+      deleteDoc(del.dataset.id);
+      buildDocs();
+    }
+  });
+
   // Klick außerhalb schließt Popover & Wort-Menü
   document.addEventListener('pointerdown', (e) => {
     if (!popover.hidden && !popover.contains(e.target) && !e.target.closest('[data-act="pen"]')) setPopover(false);
+    if (!docsEl.hidden && !docsEl.contains(e.target) && !e.target.closest('[data-act="docs"]') && !e.target.closest('.dialog')) setDocsOpen(false);
     if (menuWord && !menuEl.contains(e.target)) closeWordMenu();
+  });
+
+  // ── Tastenkürzel (iPad mit Tastatur, Mac, PC) ─────────────
+  document.addEventListener('keydown', (e) => {
+    if (!app.isVisible('schreiben') || document.querySelector('dialog[open]')) return;
+    const mod = e.metaKey || e.ctrlKey;
+    const key = e.key.toLowerCase();
+    const inText = !!e.target.closest?.('input, textarea');
+    if (mod && e.shiftKey && key === 'c') {
+      e.preventDefault();
+      busy($('[data-act="copy"]'), onCopy);
+    } else if (mod && e.shiftKey && key === 's') {
+      e.preventDefault();
+      busy($('[data-act="pdf"]'), onPdf);
+    } else if (mod && !e.shiftKey && key === 'e') {
+      e.preventDefault();
+      setEraser(!eraserOn);
+    } else if (mod && !e.shiftKey && key === 'z' && !inText && history.length) {
+      e.preventDefault();
+      $('[data-act="undo-edit"]').click();
+    } else if (key === 'escape') {
+      setPopover(false);
+      setDocsOpen(false);
+      closeWordMenu();
+      if (eraserOn) setEraser(false);
+    }
   });
 
   // ── Export ───────────────────────────────────────────────
@@ -729,6 +984,11 @@ export function createWriteView(app) {
     else if (act === 'png') busy(btn, onPng);
     else if (act === 'pdf') busy(btn, onPdf);
     else if (act === 'pen') setPopover(popover.hidden);
+    else if (act === 'docs') setDocsOpen(docsEl.hidden);
+    else if (act === 'sample') {
+      textarea.value = SAMPLE;
+      setText(SAMPLE);
+    }
     else if (act === 'eraser') setEraser(!eraserOn);
     else if (act === 'eraser-done') setEraser(false);
     else if (act === 'gn-tip') showGoodnotesTip();
@@ -749,9 +1009,10 @@ export function createWriteView(app) {
   });
 
   subscribe((state, patch) => {
-    if ('text' in patch && textarea.value !== state.text && document.activeElement !== textarea) {
+    if ('text' in patch && textarea.value !== state.text && (document.activeElement !== textarea || 'docId' in patch)) {
       textarea.value = state.text;
     }
+    if ('docId' in patch) closeWordMenu();
     if ('ui' in patch) modeSwitch.setValue(state.ui.eraseMode);
     if (menuWord && ('edits' in patch || 'text' in patch || 'pen' in patch)) closeWordMenu();
     schedule();
@@ -768,6 +1029,7 @@ export function createWriteView(app) {
     },
     hide() {
       setPopover(false);
+      setDocsOpen(false);
       setEraser(false);
     },
   };

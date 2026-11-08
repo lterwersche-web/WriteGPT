@@ -18,6 +18,7 @@ import { isLetter } from './charsets.js';
 export const PAGE_FORMATS = {
   A4: { width: 210, height: 297, label: 'A4' },
   A5: { width: 148, height: 210, label: 'A5' },
+  A6: { width: 148, height: 105, label: 'Karte' }, // Karteikarte (A6 quer)
   Letter: { width: 215.9, height: 279.4, label: 'Letter' },
 };
 
@@ -89,6 +90,31 @@ function handLine(x0, x1, y, R, size) {
   return pts;
 }
 
+/** Handgezogene Linie von A nach B (auch senkrecht) */
+function handSegment(xa, ya, xb, yb, R, size) {
+  const len = Math.hypot(xb - xa, yb - ya);
+  const n = Math.max(3, Math.round(len / (size * 1.5)));
+  const nx = -(yb - ya) / (len || 1), ny = (xb - xa) / (len || 1); // Querrichtung
+  const pts = [];
+  for (let i = 0; i <= n; i++) {
+    const t = i / n;
+    const off = (i === 0 || i === n ? 0 : R(-0.02, 0.02)) * size;
+    pts.push(xa + (xb - xa) * t + nx * off, ya + (yb - ya) * t + ny * off);
+  }
+  return pts;
+}
+
+/** Handgezeichneter Kasten (Merkkasten) – 4 Striche, Ecken stehen leicht über */
+function handBox(x0, y0, x1, y1, R, size) {
+  const o = () => R(0.02, 0.12) * size; // kleiner Überstand an den Ecken
+  return [
+    handSegment(x0 - o(), y0 + R(-0.03, 0.03) * size, x1 + o(), y0 + R(-0.03, 0.03) * size, R, size),
+    handSegment(x1 + R(-0.03, 0.03) * size, y0 - o(), x1 + R(-0.03, 0.03) * size, y1 + o(), R, size),
+    handSegment(x1 + o(), y1 + R(-0.03, 0.03) * size, x0 - o(), y1 + R(-0.03, 0.03) * size, R, size),
+    handSegment(x0 + R(-0.03, 0.03) * size, y1 + o(), x0 + R(-0.03, 0.03) * size, y0 - o(), R, size),
+  ];
+}
+
 /**
  * Text in Wörter zerlegen. Jedes Zeichen bekommt eine feste Nummer (idx) –
  * für den Zufall und damit Radierungen wissen, zu welchem Zeichen sie gehören.
@@ -105,19 +131,25 @@ function splitWords(runs, counter) {
     for (const ch of run.text) {
       const idx = counter.value++;
       if (/\s/.test(ch)) push();
-      else cur.push({ ch, idx, bold: run.bold, sup: run.sup, sub: run.sub });
+      else cur.push({ ch, idx, bold: run.bold, mark: run.mark, sup: run.sup, sub: run.sub });
     }
   }
   push();
   return words;
 }
 
+/** Datum auf Deutsch: 8.11.2026 */
+export function germanDate(d) {
+  return `${d.getDate()}.${d.getMonth() + 1}.${d.getFullYear()}`;
+}
+
 /**
  * options:
  *   continuous – keine Seitenumbrüche (für "Kopieren")
  *   edits      – Radierungen & Neu-Würfeln (siehe state.js / edits.js)
+ *   date       – Datum für die Kopfzeile (Standard: heute)
  */
-export function layoutDocument(blocks, font, pen, { continuous = false, edits = null } = {}) {
+export function layoutDocument(blocks, font, pen, { continuous = false, edits = null, date = new Date() } = {}) {
   const geo = pageGeometry(pen);
   const { margin } = geo;
   const left = margin.left;
@@ -132,6 +164,8 @@ export function layoutDocument(blocks, font, pen, { continuous = false, edits = 
   const erased = edits?.erased ?? {};
   const reroll = edits?.reroll ?? {};
   const autoFix = font.autoFix !== false;
+  const boldStyle = pen.boldStyle ?? 'thick';
+  const headingColor = pen.headingColor || null;
 
   const pages = [];
   const missingChars = new Set();
@@ -142,10 +176,16 @@ export function layoutDocument(blocks, font, pen, { continuous = false, edits = 
   let lineNo = 0;
   let lineCounter = 0;
 
+  let box = null; // offener Merkkasten { page, from }
+
   const newPage = () => {
-    page = { strokes: [], ghosts: [], missing: [], glyphs: [], lines: 0 };
+    // Merkkasten über den Seitenrand → hier schließen, auf der neuen Seite fortsetzen
+    const continueBox = !!box;
+    if (box) closeBox();
+    page = { strokes: [], ghosts: [], missing: [], glyphs: [], markers: [], lines: 0 };
     pages.push(page);
     lineNo = 0;
+    if (continueBox) box = { page, from: 0 };
   };
   newPage();
 
@@ -164,7 +204,7 @@ export function layoutDocument(blocks, font, pen, { continuous = false, edits = 
   // Ergebnis relativ zum Wortanfang: x ab 0, Grundlinie bei y = 0
   //   strokes = sichtbare Striche, ghosts = wegradierte (nur blass in der Vorschau)
   //   glyphs  = pro Zeichen eine Box (für Radierer & Antippen)
-  function layoutWord(chars, sizeH, w0, w1) {
+  function layoutWord(chars, sizeH, w0, w1, color = null) {
     const out = { strokes: [], ghosts: [], missing: [], glyphs: [], width: 0 };
     const lastVariant = new Map(); // pro Wort → "Neu würfeln" ändert nur dieses Wort
     let cursor = 0;
@@ -172,11 +212,14 @@ export function layoutDocument(blocks, font, pen, { continuous = false, edits = 
 
     for (const c of chars) {
       const pieces = resolve(c.ch);
-      const width = pen.width * (c.bold ? 1.6 : 1);
+      const width = pen.width * (c.bold && boldStyle === 'thick' ? 1.6 : 1);
       const gone = !!erased[c.idx];
       const rec = {
         idx: c.idx, ch: c.ch, gch: null, variant: 0, w0, w1, erased: gone,
         x0: Infinity, x1: -Infinity, y0: Infinity, y1: -Infinity,
+        size: sizeH, c: color,
+        mark: !!(c.mark || (c.bold && boldStyle === 'marker')), // Textmarker
+        ul: !!(c.bold && boldStyle === 'underline'), // unterstreichen
       };
       out.glyphs.push(rec);
 
@@ -273,7 +316,7 @@ export function layoutDocument(blocks, font, pen, { continuous = false, edits = 
         // Verbindungsstrich nur zwischen zwei sichtbaren Buchstaben
         if (connected && !gone && !prev.gone) {
           const b = bridge(prev.exit, prev.exitDir, [entry[0] + offset, entry[1]], rotDir(g.entryDir));
-          if (b) out.strokes.push({ pts: b, w: prev.width, g: rec });
+          if (b) out.strokes.push({ pts: b, w: prev.width, g: rec, c: color });
         }
 
         const target = gone ? out.ghosts : out.strokes;
@@ -285,7 +328,7 @@ export function layoutDocument(blocks, font, pen, { continuous = false, edits = 
             if (st[i + 1] < rec.y0) rec.y0 = st[i + 1];
             if (st[i + 1] > rec.y1) rec.y1 = st[i + 1];
           }
-          target.push({ pts: st, w: width, g: rec });
+          target.push({ pts: st, w: width, g: rec, c: color });
         }
 
         const maxX = tMax + offset;
@@ -305,17 +348,17 @@ export function layoutDocument(blocks, font, pen, { continuous = false, edits = 
   }
 
   /** Aufzählungspunkt • (gezeichnet, falls vorhanden – sonst ein Tinten-Punkt) */
-  function bulletWord(bullet, sizeH) {
+  function bulletWord(bullet, sizeH, color = null) {
     const chars = [...bullet].map((ch) => ({ ch, idx: counter.value++ }));
     const w0 = chars[0].idx, w1 = chars.at(-1).idx;
     if (chars.every((c) => erased[c.idx] === 'close')) return null;
-    if (bullet !== '•' || getVariants(font, '•').length) return layoutWord(chars, sizeH, w0, w1);
+    if (bullet !== '•' || getVariants(font, '•').length) return layoutWord(chars, sizeH, w0, w1, color);
     const r = 0.03 * sizeH;
     const y = -0.27 * sizeH;
     const w = Math.max(pen.width * 2.2, sizeH * 0.13);
     const gone = !!erased[w0];
     const rec = { idx: w0, ch: '•', gch: null, variant: 0, w0, w1, erased: gone, x0: -w / 2, x1: r + w / 2, y0: y - w / 2, y1: y + w / 2 };
-    const dot = { pts: [0, y, r, y + r * 0.3], w, g: rec };
+    const dot = { pts: [0, y, r, y + r * 0.3], w, g: rec, c: color };
     return { strokes: gone ? [] : [dot], ghosts: gone ? [dot] : [], missing: [], glyphs: [rec], width: r };
   }
 
@@ -328,6 +371,7 @@ export function layoutDocument(blocks, font, pen, { continuous = false, edits = 
     const lift = jit * R(-0.04, 0.04) * pen.size;
     const map = (x, y) => [x, baseY + y + lift + slope * (x - left)];
 
+    const lineRecs = [];
     for (const { word, x } of items) {
       // Boxen der Zeichen auf die Seite übertragen
       const recs = new Map();
@@ -337,6 +381,7 @@ export function layoutDocument(blocks, font, pen, { continuous = false, edits = 
         const pg = { ...gl, x0: ax, x1: bx, y0: Math.min(ay, by), y1: Math.max(ay, by), strokes: [] };
         recs.set(gl, pg);
         page.glyphs.push(pg);
+        lineRecs.push(pg);
       }
       const place = (list, into) => {
         for (const st of list) {
@@ -346,7 +391,7 @@ export function layoutDocument(blocks, font, pen, { continuous = false, edits = 
             pts[i] = X;
             pts[i + 1] = Y;
           }
-          const ps = { pts, w: st.w };
+          const ps = st.c ? { pts, w: st.w, c: st.c } : { pts, w: st.w };
           into.push(ps);
           recs.get(st.g)?.strokes.push(ps);
         }
@@ -359,6 +404,33 @@ export function layoutDocument(blocks, font, pen, { continuous = false, edits = 
       }
     }
 
+    // Textmarker & Unterstreichungen: zusammenhängende markierte Zeichen finden
+    const spans = (flag) => {
+      const list = lineRecs.filter((g) => g[flag] && !g.erased && isFinite(g.x0)).sort((a, b) => a.idx - b.idx);
+      const out = [];
+      for (const g of list) {
+        const last = out.at(-1);
+        // gleiche Markierung, nur durch ein Leerzeichen getrennt → ein Stück
+        if (last && g.idx - last.idx <= 2 && g.x0 >= last.x0) {
+          Object.assign(last, { idx: g.idx, x1: Math.max(last.x1, g.x1), size: Math.max(last.size, g.size) });
+        } else {
+          out.push({ idx: g.idx, x0: g.x0, x1: g.x1, size: g.size, c: g.c });
+        }
+      }
+      return out;
+    };
+    for (const sp of spans('mark')) {
+      const pad = 0.12 * sp.size;
+      const pts = handLine(sp.x0 - pad, sp.x1 + pad, -0.3 * sp.size, R, sp.size * 0.4);
+      for (let i = 0; i < pts.length; i += 2) [pts[i], pts[i + 1]] = map(pts[i], pts[i + 1]);
+      page.markers.push({ pts, w: 0.78 * sp.size, c: pen.markerColor || '#ffd60a' });
+    }
+    for (const sp of spans('ul')) {
+      const pts = handLine(sp.x0 - 0.05 * sp.size, sp.x1 + 0.08 * sp.size, 0.24 * sp.size, R, sp.size);
+      for (let i = 0; i < pts.length; i += 2) [pts[i], pts[i + 1]] = map(pts[i], pts[i + 1]);
+      page.strokes.push(sp.c ? { pts, w: pen.width, c: sp.c } : { pts, w: pen.width });
+    }
+
     // Unterstreichung (Überschriften) oder Trennlinie (---)
     if (extra.line) {
       const { x0, x1, y } = extra.line;
@@ -366,28 +438,82 @@ export function layoutDocument(blocks, font, pen, { continuous = false, edits = 
       for (let i = 0; i < pts.length; i += 2) {
         [pts[i], pts[i + 1]] = map(pts[i], pts[i + 1]);
       }
-      page.strokes.push({ pts, w: pen.width });
+      page.strokes.push(extra.lineColor ? { pts, w: pen.width, c: extra.lineColor } : { pts, w: pen.width });
     }
     advance();
+  }
+
+  /** Merkkasten zeichnen: um die Zeilen from … (letzte geschriebene Zeile) der Seite */
+  function closeBox() {
+    const { page: pg, from } = box;
+    box = null;
+    const to = (pg === page ? lineNo : pg.lines) - 1;
+    if (to < from) return;
+    const R = rangeFn(rng(hash(seed, 0xb0, pages.indexOf(pg), from)));
+    const x0 = left + pen.size * 0.45;
+    const x1 = right - pen.size * 0.1;
+    const y0 = margin.top + from * lh + lh * 0.15;
+    const y1 = margin.top + (to + 1) * lh + lh * 0.38;
+    for (const pts of handBox(x0, y0, x1, y1, R, pen.size)) {
+      pg.strokes.push(headingColor ? { pts, w: pen.width, c: headingColor } : { pts, w: pen.width });
+    }
+  }
+
+  /** Ein paar Wörter frei auf eine Seite setzen (Kopfzeile, Seitenzahl) */
+  function stampText(pg, text, x, baseY, sizeH, idxBase, alignRight = false) {
+    const words = splitWords([{ text }], { value: idxBase });
+    const laid = words.map((w) => layoutWord(w.chars, sizeH, w.w0, w.w1));
+    const gap = pen.wordSpacing * sizeH;
+    const total = laid.reduce((sum, w) => sum + w.width, 0) + gap * Math.max(0, laid.length - 1);
+    let cx = alignRight ? x - total : x;
+    for (const word of laid) {
+      const recs = new Map();
+      for (const gl of word.glyphs) {
+        const pg2 = { ...gl, x0: gl.x0 + cx, x1: gl.x1 + cx, y0: gl.y0 + baseY, y1: gl.y1 + baseY, strokes: [] };
+        recs.set(gl, pg2);
+        pg.glyphs.push(pg2);
+      }
+      const place = (list, into) => {
+        for (const st of list) {
+          const pts = st.pts.map((v, i) => (i % 2 ? v + baseY : v + cx));
+          const ps = { pts, w: st.w };
+          into.push(ps);
+          recs.get(st.g)?.strokes.push(ps);
+        }
+      };
+      place(word.strokes, pg.strokes);
+      place(word.ghosts, pg.ghosts);
+      cx += word.width + gap;
+    }
   }
 
   // ── Alle Blöcke durchgehen ───────────────────────────────
   let prevType = null;
   for (const block of blocks) {
+    // Merkkasten endet, sobald etwas anderes als ein Zitat kommt
+    if (box && block.type !== 'quote') closeBox();
+
     if (block.type === 'blank') {
       if (lineNo > 0) advance();
       prevType = 'blank';
       continue;
     }
     if (block.type === 'hr') {
-      commitLine([], { line: { x0: left, x1: right, y: -0.3 * pen.size } });
+      if (pen.hrPageBreak && !continuous) {
+        // --- = neue Seite (z.B. eine Karteikarte pro Thema)
+        if (lineNo > 0 || page.strokes.length) newPage();
+      } else {
+        commitLine([], { line: { x0: left, x1: right, y: -0.3 * pen.size } });
+      }
       prevType = 'hr';
       continue;
     }
+    if (block.type === 'quote' && !box) box = { page, from: lineNo };
 
     const scale = HEADING_SCALE[block.type] ?? 1;
     const isHeading = scale !== 1;
     const sizeH = pen.size * scale;
+    const color = isHeading ? headingColor : null;
 
     // Überschrift: Leerzeile davor (außer ganz oben)
     if (isHeading && lineNo > 0 && prevType && prevType !== 'blank') advance();
@@ -397,7 +523,7 @@ export function layoutDocument(blocks, font, pen, { continuous = false, edits = 
     const items = [];
     if (block.bullet) {
       key += block.bullet;
-      const bw = bulletWord(block.bullet, sizeH);
+      const bw = bulletWord(block.bullet, sizeH, color);
       if (bw) items.push({ word: bw, x: indentX });
       textX = indentX + Math.max((bw?.width ?? 0) + pen.size * 0.5, pen.size);
     } else if (block.hang) {
@@ -411,8 +537,14 @@ export function layoutDocument(blocks, font, pen, { continuous = false, edits = 
     let hasText = false;
 
     const flush = () => {
+      // Überschrift zentrieren: ganze Zeile in die Mitte schieben
+      let shift = 0;
+      if (isHeading && pen.centerHeadings && hasText) {
+        shift = (left + right) / 2 - (lineStart + x) / 2;
+        for (const it of items) it.x += shift;
+      }
       const extra = isHeading && hasText
-        ? { line: { x0: lineStart - 0.05 * sizeH, x1: x + 0.08 * sizeH, y: 0.3 * sizeH } }
+        ? { line: { x0: lineStart - 0.05 * sizeH + shift, x1: x + 0.08 * sizeH + shift, y: 0.3 * sizeH }, lineColor: color }
         : {};
       commitLine(items.splice(0), extra);
       x = lineStart = textX;
@@ -425,7 +557,7 @@ export function layoutDocument(blocks, font, pen, { continuous = false, edits = 
       if (!chars.length) continue;
       const R = rangeFn(rng(hash(seed, 0x77, chars[0].idx)));
       const gap = (pen.wordSpacing + jit * R(-0.06, 0.06)) * sizeH;
-      let word = layoutWord(chars, sizeH, w0, w1);
+      let word = layoutWord(chars, sizeH, w0, w1, color);
 
       // Passt nicht mehr in die Zeile → neue Zeile
       if (hasText && x + gap + word.width > right) flush();
@@ -434,14 +566,14 @@ export function layoutDocument(blocks, font, pen, { continuous = false, edits = 
       let rest = chars;
       while (!hasText && word.width > right - x && rest.length > 1) {
         let k = rest.length - 1;
-        let part = layoutWord(rest.slice(0, k), sizeH, w0, w1);
-        while (k > 1 && part.width > right - x) part = layoutWord(rest.slice(0, --k), sizeH, w0, w1);
+        let part = layoutWord(rest.slice(0, k), sizeH, w0, w1, color);
+        while (k > 1 && part.width > right - x) part = layoutWord(rest.slice(0, --k), sizeH, w0, w1, color);
         items.push({ word: part, x });
         x += part.width;
         hasText = true;
         flush();
         rest = rest.slice(k);
-        word = layoutWord(rest, sizeH, w0, w1);
+        word = layoutWord(rest, sizeH, w0, w1, color);
       }
 
       if (hasText) x += gap;
@@ -453,9 +585,23 @@ export function layoutDocument(blocks, font, pen, { continuous = false, edits = 
     prevType = block.type;
   }
 
+  if (box) closeBox();
+
   // Leere letzte Seite entfernen
   const last = pages.at(-1);
   if (pages.length > 1 && !last.strokes.length && !last.missing.length && !last.glyphs.length) pages.pop();
+
+  // Kopfzeile (Thema links, Datum rechts) & Seitenzahlen – auf jeder Seite
+  const hdrSize = pen.size * 0.85;
+  pages.forEach((pg, i) => {
+    const base = -100000 * (i + 1); // eigene Nummern (negativ), damit sie nicht mit dem Text kollidieren
+    const hdrY = margin.top - Math.min(lh * 0.3, 3);
+    if (pen.headerText?.trim()) stampText(pg, pen.headerText.trim(), left, hdrY, hdrSize, base);
+    if (pen.headerDate) stampText(pg, germanDate(date), right, hdrY, hdrSize, base + 500, true);
+    if (pen.pageNumbers && !continuous) {
+      stampText(pg, String(i + 1), right, geo.height - margin.bottom * 0.4, hdrSize, base + 900, true);
+    }
+  });
 
   if (continuous) {
     geo.height = margin.top + (pages[0].lines + 1) * lh + margin.bottom;

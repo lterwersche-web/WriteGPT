@@ -41,6 +41,7 @@ export class GlyphEditor {
     this.pointerType = null;
     this.lastUp = 0; // Zeitpunkt, an dem der letzte Strich endete
     this.hint = '';
+    this.template = null; // blasse Vorlage (z.B. die vorherige Variante)
 
     this.canvas = document.createElement('canvas');
     this.canvas.className = 'pad-canvas';
@@ -160,6 +161,12 @@ export class GlyphEditor {
     this.draw();
   }
 
+  /** Blasse Vorlage im Hintergrund – hilft, jede Variante gleich groß zu zeichnen */
+  setTemplate(data) {
+    this.template = data?.strokes?.length ? data : null;
+    this.draw();
+  }
+
   resize() {
     const w = this.host.clientWidth;
     if (!w) return;
@@ -203,6 +210,12 @@ export class GlyphEditor {
     guide(GUIDES.xHeight, '#c3d0e3', 1.5, [6, 6], 'Mittellinie');
     guide(GUIDES.baseline, '#5b9cf5', 2, [], 'Grundlinie');
     guide(GUIDES.descender, '#d3dcea', 1.5, [6, 6], 'Unterlinie');
+
+    // Vorlage (nur Orientierung, wird nicht gespeichert)
+    if (this.template) {
+      const tpl = this.template.strokes.map((pts) => ({ pts, w: INK_WIDTH }));
+      drawStrokes(ctx, tpl, 'rgba(91, 156, 245, 0.3)', u, 0, BOX.top);
+    }
 
     if (this.hint && !this.strokes.length && !this.current) {
       ctx.save();

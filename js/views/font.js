@@ -68,6 +68,7 @@ export function createFontView(app) {
         <header class="page-head">
           <h1>${editing ? 'Einrichtung ändern' : 'Meine Schrift einrichten'}</h1>
           <p>Drei kurze Fragen – dann zeichnest du Schritt für Schritt deine Buchstaben.</p>
+          <span class="chip chip-soft font-chip">${icon('font')}${esc(f.name ?? 'Meine Schrift')}</span>
         </header>
 
         <section class="card setup-card">
@@ -212,6 +213,7 @@ export function createFontView(app) {
             <div class="pad-head">
               <span class="muted pad-label">Zeichne hier</span>
               <div class="head-actions">
+                <button class="btn btn-ghost btn-sm" data-act="template" aria-pressed="false" title="Andere Variante blass im Hintergrund zeigen">${icon('eye')}<span>Vorlage</span></button>
                 <button class="btn btn-ghost btn-sm" data-act="undo">${icon('undo')}<span>Rückgängig</span></button>
                 <button class="btn btn-ghost btn-sm" data-act="clear">${icon('trash')}<span>Leeren</span></button>
               </div>
@@ -262,8 +264,31 @@ export function createFontView(app) {
         : info.hint;
     editor.setData(getGlyph(s.ch, s.variant));
     editor.setHint(n > 1 && s.variant > 0 ? 'Nochmal – diesmal ein bisschen anders' : '');
+    paintTemplate();
     paintThumbs();
     paintDrawState();
+  }
+
+  /** Vorlage = eine andere, schon gezeichnete Variante desselben Zeichens */
+  function paintTemplate() {
+    const on = getState().ui.showTemplate !== false;
+    const btn = el.querySelector('[data-act="template"]');
+    btn.classList.toggle('active', on);
+    btn.setAttribute('aria-pressed', on);
+    const s = steps[step];
+    const n = font().variants;
+    let tpl = null;
+    if (on && n > 1) {
+      // Reihenfolge: erst die Varianten davor (nächste zuerst), dann die danach
+      const before = [...Array(s.variant).keys()].reverse(); // z.B. 1, 0
+      const after = [...Array(n).keys()].filter((v) => v > s.variant); // z.B. 2
+      for (const v of [...before, ...after]) {
+        tpl = getGlyph(s.ch, v);
+        if (tpl) break;
+      }
+    }
+    btn.hidden = n < 2;
+    editor.setTemplate(tpl);
   }
 
   function paintThumbs() {
@@ -411,6 +436,10 @@ export function createFontView(app) {
     const act = btn.dataset.act;
     if (act === 'setup') renderSetup();
     else if (act === 'undo') editor?.undo();
+    else if (act === 'template') {
+      update({ ui: { ...getState().ui, showTemplate: getState().ui.showTemplate === false } });
+      paintTemplate();
+    }
     else if (act === 'clear') editor?.clear();
     else if (act === 'prev') goTo(step - 1);
     else if (act === 'skip') goTo(step + 1);

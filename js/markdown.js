@@ -6,7 +6,7 @@
 // dann handschriftlich schreibt:
 //
 //   { type: 'h1' | 'h2' | 'h3' | 'p' | 'li' | 'quote' | 'hr' | 'blank',
-//     runs: [{ text, bold, sup, sub }],   // Textstücke mit Formatierung
+//     runs: [{ text, bold, mark, sup, sub }], // Textstücke mit Formatierung
 //     indent: 0,                          // Einrückung (Listen-Ebene)
 //     bullet: '•' | '1.' | null }         // Aufzählungszeichen
 
@@ -147,30 +147,38 @@ export function parseInline(src, base = {}) {
     .replace(/<br\s*\/?>/gi, ' ')
     .replace(/<\/?[a-z][^>]*>/gi, ''); // HTML-Tags
 
-  // **fett** / __fett__ → Teile mit bold: true
-  const parts = s.split(/(\*\*|__)/);
-  const markerCount = parts.filter((p) => p === '**' || p === '__').length;
-  let usable = markerCount - (markerCount % 2); // ungerade Anzahl → letzter bleibt Text
+  // **fett** / __fett__ → bold: true   ·   ==markiert== → mark: true (Textmarker)
+  const parts = s.split(/(\*\*|__|==)/);
+  const isBold = (p) => p === '**' || p === '__';
+  const boldCount = parts.filter(isBold).length;
+  const markCount = parts.filter((p) => p === '==').length;
+  // ungerade Anzahl → das letzte Zeichen bleibt normaler Text
+  let boldLeft = boldCount - (boldCount % 2);
+  let markLeft = markCount - (markCount % 2);
   let bold = !!base.bold;
+  let mark = false;
   const segments = [];
   for (const part of parts) {
-    if ((part === '**' || part === '__') && usable > 0) {
+    if (isBold(part) && boldLeft > 0) {
       bold = !bold;
-      usable--;
+      boldLeft--;
       continue;
     }
-    if (part) segments.push({ text: part, bold });
+    if (part === '==' && markLeft > 0) {
+      mark = !mark;
+      markLeft--;
+      continue;
+    }
+    if (part) segments.push({ text: part, bold, mark });
   }
 
   const runs = [];
+  const same = (a, b) => a.bold === b.bold && a.mark === b.mark && a.sup === b.sup && a.sub === b.sub;
   const push = (text, flags) => {
     if (!text) return;
     const last = runs[runs.length - 1];
-    if (last && last.bold === flags.bold && last.sup === flags.sup && last.sub === flags.sub) {
-      last.text += text;
-    } else {
-      runs.push({ text, ...flags });
-    }
+    if (last && same(last, flags)) last.text += text;
+    else runs.push({ text, ...flags });
   };
 
   for (const seg of segments) {
@@ -186,6 +194,7 @@ export function parseInline(src, base = {}) {
     let buf = '';
     const flags = () => ({
       bold: seg.bold,
+      mark: seg.mark,
       sup: stack.at(-1) === 'sup',
       sub: stack.at(-1) === 'sub',
     });

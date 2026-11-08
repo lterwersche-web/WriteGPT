@@ -9,7 +9,7 @@ import { createWriteView } from './views/write.js';
 import { createFontView } from './views/font.js';
 import { createSettingsView } from './views/settings.js';
 import { icon } from './icons.js';
-import { toast } from './ui.js';
+import { toast, showOnboarding } from './ui.js';
 
 const TABS = [
   { id: 'schreiben', label: 'Schreiben', icon: 'pen' },
@@ -80,6 +80,11 @@ window.addEventListener('hashchange', () => show(location.hash.slice(1)));
 // Start: Noch keine Schrift? → direkt zur Einrichtung
 const hasFont = Object.keys(getState().font.glyphs).length > 0;
 show(location.hash.slice(1) || (hasFont ? 'schreiben' : 'schrift'));
+
+// Beim allerersten Start: Kurzanleitung zeigen
+if (!getState().ui.onboarded) {
+  showOnboarding().then(() => update({ ui: { ...getState().ui, onboarded: true } }));
+}
 
 // Browser bitten, unsere Daten nicht automatisch zu löschen (Safari räumt sonst manchmal auf)
 navigator.storage?.persist?.().catch(() => {});

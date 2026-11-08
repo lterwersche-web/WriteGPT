@@ -2,14 +2,17 @@
 // views/settings.js – ⚙️ Einstellungen
 // ─────────────────────────────────────────────────────────────
 
-import { getState, update, subscribe, exportBackup, importBackup, resetFont } from '../state.js';
+import {
+  getState, update, subscribe, exportBackup, importBackup, resetFont,
+  allFonts, createFont, switchFont, renameFont, deleteFont,
+} from '../state.js';
 import { CHAR_SETS, buildSteps } from '../charsets.js';
 import { STYLES } from '../layout.js';
 import { shareOrDownload } from '../export.js';
 import { icon } from '../icons.js';
-import { toast, confirmDialog, showGoodnotesTip, segmented, toggle, esc } from '../ui.js';
+import { toast, confirmDialog, promptDialog, showGoodnotesTip, showOnboarding, SHORTCUTS, segmented, toggle, esc } from '../ui.js';
 
-export const APP_VERSION = '1.1.0';
+export const APP_VERSION = '1.2.0';
 
 export function createSettingsView(app) {
   const el = document.createElement('section');
@@ -24,7 +27,31 @@ export function createSettingsView(app) {
       <div class="narrow">
         <header class="page-head"><h1>Einstellungen</h1></header>
 
-        <h2 class="group-title">Meine Schrift</h2>
+        <h2 class="group-title">Meine Schriften</h2>
+        <section class="card list font-list">
+          ${allFonts()
+            .map(
+              (f) => `
+            <div class="row font-row${f.active ? ' active' : ''}">
+              <div class="row-text">
+                <strong>${esc(f.name)} ${f.active ? '<span class="chip chip-soft">aktiv</span>' : ''}</strong>
+                <span>${f.count} Zeichen gezeichnet</span>
+              </div>
+              <div class="row-actions">
+                ${f.active ? '' : `<button class="btn btn-sm" data-act="font-use" data-id="${esc(f.id)}">Verwenden</button>`}
+                <button class="btn btn-icon btn-ghost" data-act="font-rename" data-id="${esc(f.id)}" aria-label="Umbenennen">${icon('pen')}</button>
+                <button class="btn btn-icon btn-ghost danger-text" data-act="font-delete" data-id="${esc(f.id)}" aria-label="Löschen">${icon('trash')}</button>
+              </div>
+            </div>`,
+            )
+            .join('')}
+          <div class="row">
+            <div class="row-text"><strong>Neue Schrift anlegen</strong><span>Z.B. Druck- und Schreibschrift – oder für Geschwister am selben iPad</span></div>
+            <button class="btn btn-sm" data-act="font-new">${icon('plus')}<span>Neu</span></button>
+          </div>
+        </section>
+
+        <h2 class="group-title">Aktive Schrift: ${esc(font.name ?? 'Meine Schrift')}</h2>
         <section class="card list">
           <div class="row row-stack">
             <div class="row-text"><strong>Schreibstil</strong><span>Wie die App deine Buchstaben zusammensetzt</span></div>
@@ -56,8 +83,8 @@ export function createSettingsView(app) {
             <label class="btn btn-sm">${icon('upload')}<span>Datei wählen</span><input type="file" accept=".json,application/json" hidden></label>
           </div>
           <div class="row">
-            <div class="row-text"><strong class="danger-text">Schrift löschen</strong><span>Entfernt alle gezeichneten Buchstaben</span></div>
-            <button class="btn btn-sm btn-danger-soft" data-act="reset">${icon('trash')}<span>Löschen</span></button>
+            <div class="row-text"><strong class="danger-text">Zeichnungen zurücksetzen</strong><span>Entfernt alle Buchstaben der aktiven Schrift (Name bleibt)</span></div>
+            <button class="btn btn-sm btn-danger-soft" data-act="reset">${icon('trash')}<span>Zurücksetzen</span></button>
           </div>
         </section>
         <p class="group-note">Alles bleibt auf deinem Gerät – nichts wird hochgeladen. Tipp: Mach ab und zu ein Backup, falls du den Browser-Verlauf löschst.</p>
@@ -80,6 +107,20 @@ export function createSettingsView(app) {
             <li><span class="step-num">${icon('eraser')}</span><div><strong>Radieren:</strong> Der Goodnotes-Radierer wirkt nur auf Striche, die in Goodnotes gezeichnet wurden – nicht auf eingefügte Bilder oder PDFs. Radiere deshalb vorher hier in WriteGPT oder nutze den Weiß-Trick.
               <button class="btn btn-ghost btn-xs link-btn" data-act="gn-tip">So geht's ${icon('right')}</button></div></li>
           </ol>
+        </section>
+
+        <h2 class="group-title">Tastenkürzel</h2>
+        <section class="card list">
+          ${SHORTCUTS.map(([keys, what]) => `<div class="row shortcut-row"><span>${esc(what)}</span><kbd class="kbd-wide">${esc(keys)}</kbd></div>`).join('')}
+        </section>
+        <p class="group-note">Für iPad mit Tastatur (Magic Keyboard), Mac und PC. Auf Windows statt ⌘ die Strg-Taste.</p>
+
+        <h2 class="group-title">Hilfe</h2>
+        <section class="card list">
+          <div class="row">
+            <div class="row-text"><strong>Kurzanleitung</strong><span>In 3 Schritten zur Handschrift in Goodnotes</span></div>
+            <button class="btn btn-sm" data-act="onboarding">${icon('info')}<span>Zeigen</span></button>
+          </div>
         </section>
 
         <p class="about">WriteGPT · Version ${esc(APP_VERSION)}</p>
@@ -131,7 +172,38 @@ export function createSettingsView(app) {
     const btn = e.target.closest('[data-act]');
     if (!btn) return;
     const act = btn.dataset.act;
+    const id = btn.dataset.id;
     if (act === 'font') app.navigate('schrift');
+    else if (act === 'onboarding') showOnboarding();
+    else if (act === 'font-new') {
+      const name = await promptDialog({ title: 'Neue Schrift', message: 'Wie soll die Schrift heißen?', placeholder: 'z.B. Schreibschrift', confirm: 'Anlegen' });
+      if (!name) return;
+      createFont(name);
+      toast(`„${name}“ angelegt – jetzt einrichten!`, 'success');
+      app.navigate('schrift');
+    } else if (act === 'font-use') {
+      switchFont(id);
+      toast(`„${getState().font.name}“ ist jetzt aktiv.`, 'success');
+      render();
+    } else if (act === 'font-rename') {
+      const current = allFonts().find((f) => f.id === id);
+      const name = await promptDialog({ title: 'Schrift umbenennen', value: current?.name ?? '', confirm: 'Speichern' });
+      if (!name) return;
+      renameFont(id, name);
+      render();
+    } else if (act === 'font-delete') {
+      const target = allFonts().find((f) => f.id === id);
+      const ok = await confirmDialog({
+        title: `„${target?.name}“ löschen?`,
+        message: 'Alle Zeichnungen dieser Schrift werden entfernt. Das kann man nicht rückgängig machen – außer du hast ein Backup.',
+        confirm: 'Löschen',
+        danger: true,
+      });
+      if (!ok) return;
+      deleteFont(id);
+      toast('Schrift gelöscht.', 'success');
+      render();
+    }
     else if (act === 'gn-tip') showGoodnotesTip();
     else if (act === 'backup') {
       const d = new Date().toISOString().slice(0, 10);
@@ -140,21 +212,21 @@ export function createSettingsView(app) {
       if (result !== 'cancelled') toast('Backup erstellt.', 'success');
     } else if (act === 'reset') {
       const ok = await confirmDialog({
-        title: 'Schrift wirklich löschen?',
+        title: 'Zeichnungen wirklich zurücksetzen?',
         message: 'Alle gezeichneten Buchstaben werden entfernt. Das kann man nicht rückgängig machen – außer du hast ein Backup.',
         confirm: 'Löschen',
         danger: true,
       });
       if (ok) {
         resetFont();
-        toast('Schrift gelöscht.', 'success');
+        toast('Zeichnungen zurückgesetzt.', 'success');
         render();
       }
     }
   });
 
   subscribe((state, patch) => {
-    if ('font' in patch && app.isVisible('einstellungen') && !el.contains(document.activeElement)) render();
+    if (('font' in patch || 'fontLibrary' in patch) && app.isVisible('einstellungen') && !el.contains(document.activeElement)) render();
   });
 
   return {

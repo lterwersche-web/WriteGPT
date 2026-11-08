@@ -29,6 +29,28 @@ als Bild zum Einfügen, als PNG oder als PDF.
   oder *„x“ neu zeichnen* (springt direkt zur Zeichnung, die komisch aussieht).
 - **Automatisch ausrichten** (Einstellungen, standardmäßig an): rückt Buchstaben auf die
   Grundlinie, gleicht zu große/kleine Buchstaben an und entfernt verirrte Mini-Striche.
+- **Vorlage beim Zeichnen:** Die vorherige Variante liegt blass im Hintergrund → gleichmäßigere Schrift.
+
+### Lernzettel & Karteikarten (Stift & Papier → Tabs „Seite“ und „Lernzettel“)
+
+| Was | So geht's |
+|---|---|
+| Textmarker | `==Text==` im Text – oder **fett** automatisch als Textmarker |
+| Fett als … | Dicker · Textmarker · Unterstrichen |
+| Überschriften | eigene Farbe, optional zentriert |
+| Merkkasten | `> Merke: …` → handgezeichneter Kasten |
+| Kopfzeile | Thema links, Datum rechts – auf jeder Seite |
+| Seitenzahlen | unten rechts, in deiner Handschrift |
+| Karteikarten | Format „Karte“ (A6 quer) + „--- startet neue Seite“ |
+| Heft-Look | rote Randlinie, liniert/kariert/gepunktet |
+| Füller | Stiftart „Füller“: Strich wird je nach Richtung dick oder dünn |
+
+### Organisation
+
+- **Meine Texte:** beliebig viele Texte speichern und wechseln (inkl. Radierungen).
+- **Meine Schriften:** mehrere Handschriften (z.B. Druck- & Schreibschrift, Geschwister).
+- **Beispiel ausprobieren:** ein Klick zeigt alle Lernzettel-Funktionen.
+- **Tastenkürzel:** ⌘⇧C kopieren · ⌘⇧S PDF · ⌘E Radierer · ⌘Z rückgängig · Esc schließen.
 - Unter **Stift & Papier** stellst du Tintenfarbe, Stiftdicke, Größe, Abstände, „Natürlichkeit“
   (wie stark die Schrift wackelt) und das Papier (blanko, liniert, kariert, gepunktet; A4/A5/Letter) ein.
 - **Neu mischen** würfelt die Zufalls-Schwankungen neu.
@@ -73,11 +95,11 @@ WriteGPT/
 ├── css/style.css         Das komplette Design (Farben ganz oben als Variablen)
 ├── js/
 │   ├── main.js           Startpunkt: Navigation + die drei Bereiche
-│   ├── state.js          Speicher der App (localStorage) + Backup
+│   ├── state.js          Speicher: Schriften, Texte, Einstellungen (localStorage) + Backup
 │   ├── charsets.js       Welche Zeichen es gibt + Ersatzzeichen
 │   ├── glyphs.js         Infos über gezeichnete Buchstaben (Breite, Anfang, Ende)
 │   ├── editor.js         Das Zeichenfeld für Apple Pencil / Finger
-│   ├── markdown.js       ChatGPT-Text → saubere Blöcke (Überschrift, Liste, …)
+│   ├── markdown.js       ChatGPT-Text → saubere Blöcke (Überschrift, Liste, ==Marker==, …)
 │   ├── edits.js          Radierungen & „Neu würfeln“ dem richtigen Zeichen zuordnen
 │   ├── layout.js         Herzstück: Wo landet welcher Buchstabe auf der Seite?
 │   ├── render.js         Malt Striche & Papier auf ein <canvas>
@@ -117,3 +139,7 @@ WriteGPT/
    Apples Grafik-Engine (Goodnotes, Safari) kleine Löcher – die „weißen Punkte“.
 8. **Auto-Fix:** Die App berechnet aus allen deinen Buchstaben den typischen Wert (Median) für
    Größe und Grundlinie und rückt Ausreißer zurecht – deine Zeichnungen selbst bleiben unverändert.
+9. **Füller:** Jedes Strich-Stück bekommt je nach Richtung (Winkel zur schrägen Feder) eine von
+   6 Dicken. Gleiche Dicken werden gemeinsam gezeichnet.
+10. **Textmarker im PDF:** Ein PDF-„Grafik-Zustand“ (ExtGState) mit 50 % Deckkraft macht den
+    Marker durchscheinend – genau wie ein echter Textmarker.

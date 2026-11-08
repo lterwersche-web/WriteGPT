@@ -2,7 +2,7 @@
 // export.js – Raus aus der App: PNG, PDF, Zwischenablage, Teilen
 // ─────────────────────────────────────────────────────────────
 
-import { contentBounds, drawStrokes } from './render.js';
+import { contentBounds, drawStrokes, drawMarkers } from './render.js';
 
 // iPad-Safari erlaubt Canvas-Bilder bis ca. 16 Megapixel
 const MAX_PIXELS = 16_000_000;
@@ -24,7 +24,8 @@ export function strokesToPng(page, pen, pxPerMm = 12) {
   canvas.width = Math.ceil(w * scale);
   canvas.height = Math.ceil(h * scale);
   const ctx = canvas.getContext('2d');
-  drawStrokes(ctx, page.strokes, pen.color, scale, b.minX - pad, b.minY - pad);
+  drawMarkers(ctx, page.markers, scale, b.minX - pad, b.minY - pad);
+  drawStrokes(ctx, page.strokes, pen.color, scale, b.minX - pad, b.minY - pad, pen.nib);
 
   return new Promise((resolve) => {
     canvas.toBlob((blob) => {
