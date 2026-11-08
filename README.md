@@ -84,6 +84,7 @@ als Bild zum Einfügen, als PNG oder als PDF.
   kompletten Versionsgeschichte (Ordner `.git`). In iCloud Drive o.ä. aufheben.
 - **Mit Claude weiterarbeiten:** Am einfachsten mit **Claude Code am Computer** (Desktop-App oder
   Terminal): ZIP entpacken, Ordner öffnen, loslegen – dafür braucht man kein GitHub.
+  Schritt für Schritt: siehe **[START-AM-IMAC.md](START-AM-IMAC.md)**. Projekt-Infos für Claude stehen in **CLAUDE.md**.
 - Versionsverwaltung funktioniert ganz normal lokal mit `git` (`git log`, `git commit` …).
 
 ---
@@ -104,6 +105,8 @@ Man braucht nur [Node.js](https://nodejs.org) – keine weiteren Pakete.
 
 ```
 WriteGPT/
+├── CLAUDE.md             Projekt-Notizen für Claude Code (wird automatisch gelesen)
+├── START-AM-IMAC.md      Anleitung: am iMac mit Claude Code weitermachen
 ├── index.html            Grundgerüst der Seite
 ├── css/style.css         Das komplette Design (Farben ganz oben als Variablen)
 ├── js/
