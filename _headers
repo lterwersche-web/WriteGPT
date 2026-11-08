@@ -1,0 +1,5 @@
+# Netlify: Einstellungen für die Auslieferung der App
+# Der Service Worker darf nie zwischengespeichert werden,
+# sonst bekommen iPads keine neuen Versionen.
+/sw.js
+  Cache-Control: no-cache
