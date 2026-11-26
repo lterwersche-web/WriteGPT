@@ -62,31 +62,16 @@ als Bild zum Einfügen, als PNG oder als PDF.
 
 ---
 
-## Die App online stellen (Netlify, kostenlos)
+## Die App online stellen (GitHub Pages, kostenlos)
 
-1. Die Datei **WriteGPT-zum-Hochladen.zip** entpacken (oder diesen Projektordner nehmen).
-2. **https://app.netlify.com/drop** öffnen.
-3. Den Ordner auf die Fläche ziehen → nach ein paar Sekunden läuft die App unter einer `…netlify.app`-Adresse.
-4. **Wichtig:** Ein kostenloses Netlify-Konto anlegen und die Seite „claimen“ – sonst wird sie nach
-   kurzer Zeit (ca. 1 Stunde) wieder gelöscht. Im Konto kannst du auch einen schöneren Namen wählen.
-5. Auf dem iPad in **Safari** öffnen → Teilen-Symbol → **„Zum Home-Bildschirm“**.
+1. Auf GitHub ins Repository → **Settings** → **Pages**
+2. Bei **Source**: „Deploy from a branch“ wählen
+3. Branch auswählen (z.B. `main`) und Ordner **`/ (root)`** → **Save**
+4. Nach ca. 1 Minute läuft die App unter `https://<dein-name>.github.io/WriteGPT/`
+5. Auf dem iPad in **Safari** öffnen → Teilen-Symbol → **„Zum Home-Bildschirm“**
 
-**Update einspielen:** In Netlify die Seite öffnen → *Deploys* → den neuen Ordner in die Upload-Fläche ziehen.
-
-> Tipp: Ordner hochladen klappt am Computer am zuverlässigsten. Die Datei `_headers` sorgt dafür,
-> dass iPads Updates sofort bekommen.
-
----
-
-## Sichern & Weiterarbeiten
-
-- **Code & Versionen** liegen auf GitHub (`lterwersche-web/WriteGPT`). Die Wege unten gehen zusätzlich auch ganz ohne GitHub.
-- **Sicherung:** Die Datei **WriteGPT-komplett-mit-Verlauf.zip** enthält alles – inklusive der
-  kompletten Versionsgeschichte (Ordner `.git`). In iCloud Drive o.ä. aufheben.
-- **Mit Claude weiterarbeiten:** Am einfachsten mit **Claude Code am Computer** (Desktop-App oder
-  Terminal): ZIP entpacken, Ordner öffnen, loslegen – dafür braucht man kein GitHub.
-  Schritt für Schritt: siehe **[START-AM-IMAC.md](START-AM-IMAC.md)**. Projekt-Infos für Claude stehen in **CLAUDE.md**.
-- Versionsverwaltung funktioniert ganz normal lokal mit `git` (`git log`, `git commit` …).
+> Hinweis: GitHub Pages ist für **öffentliche** Repositories kostenlos. Für private Repos
+> braucht man GitHub Pro.
 
 ---
 
@@ -106,8 +91,6 @@ Man braucht nur [Node.js](https://nodejs.org) – keine weiteren Pakete.
 
 ```
 WriteGPT/
-├── CLAUDE.md             Projekt-Notizen für Claude Code (wird automatisch gelesen)
-├── START-AM-IMAC.md      Anleitung: am iMac mit Claude Code weitermachen
 ├── index.html            Grundgerüst der Seite
 ├── css/style.css         Das komplette Design (Farben ganz oben als Variablen)
 ├── js/
@@ -127,7 +110,6 @@ WriteGPT/
 │   ├── icons.js          Symbole als SVG
 │   └── views/            Die drei Bereiche: write.js, font.js, settings.js
 ├── sw.js                 Service Worker → App funktioniert offline
-├── _headers              Einstellungen für das Hosting bei Netlify
 ├── manifest.webmanifest  Infos für „Zum Home-Bildschirm“ (Name, Icon, Farben)
 ├── icons/                App-Icons
 ├── tests/                Automatische Tests (node --test)

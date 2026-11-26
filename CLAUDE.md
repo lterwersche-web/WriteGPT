@@ -11,7 +11,7 @@ Schwerpunkt: Notizen, Lernzettel und Karteikarten in der eigenen Schrift.
 - Daten liegen im Browser (`localStorage`, Schlüssel `writegpt:v1`), Service Worker (`sw.js`) für Offline.
 - Lokal starten: `npm start` → http://localhost:8080 (braucht Node.js)
 - Tests: `npm test` (Node-Testrunner, aktuell 64 Tests in `tests/`)
-- Hosting: Netlify (Ordner hochladen). `_headers` verhindert, dass `sw.js` zwischengespeichert wird.
+- Hosting: GitHub Pages (Settings → Pages → Zweig `claude/bold-faraday-15484t`, Ordner `/ (root)`). `.nojekyll` nicht löschen.
 - Code liegt auf GitHub: `lterwersche-web/WriteGPT`, Zweig `claude/bold-faraday-15484t` (Remote `origin`).
 
 ## Aufbau
