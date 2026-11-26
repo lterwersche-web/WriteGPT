@@ -62,4 +62,6 @@ Schwerpunkt: Notizen, Lernzettel und Karteikarten in der eigenen Schrift.
 - Schreiben: Live-Vorschau, Meine Texte, Radierer (Lücke/Zusammenrücken), Wort-Menü,
   Lernzettel (Textmarker, farbige/zentrierte Überschriften, Merkkasten), Kopfzeile/Datum/Seitenzahlen,
   Karteikarten (A6, `---` = neue Seite), Füller, Export PNG/PDF/Kopieren, Tastenkürzel.
-- Offen: Der Fix gegen „weiße Punkte“ ist noch nicht auf einem echten iPad bestätigt.
+- „Weiße Punkte“: laut Besitzer auf dem iPad behoben.
+- Offen: Goodnotes-Papiere 1:1 nachbauen (wartet auf leere Goodnotes-Seiten als PDF zum Ausmessen).
+- Offen: Kopiertes Bild in Goodnotes unscharf – Auflösung auf 24 px/mm erhöht, Bestätigung auf dem iPad fehlt.

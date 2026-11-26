@@ -10,9 +10,11 @@ const MAX_SIDE = 16_000;
 
 /**
  * Transparentes PNG nur mit der Schrift (zugeschnitten auf den Text).
- * pxPerMm = Auflösung (12 px/mm ≈ 300 dpi → gestochen scharf)
+ * pxPerMm = Auflösung. 24 px/mm ≈ 600 dpi: Das iPad zeigt A4 quer schon mit ca. 11 px/mm,
+ * mit 12 px/mm war das Bild in Goodnotes sofort unscharf. Sehr große Bilder werden
+ * automatisch auf das Canvas-Limit (MAX_PIXELS) heruntergerechnet.
  */
-export function strokesToPng(page, pen, pxPerMm = 12) {
+export function strokesToPng(page, pen, pxPerMm = 24) {
   const b = contentBounds(page);
   if (!b) return Promise.resolve(null);
   const pad = 1.5; // mm Rand
