@@ -62,7 +62,7 @@ als Bild zum Einfügen, als PNG oder als PDF.
 
 ---
 
-## Die App online stellen (Netlify, kostenlos – ohne GitHub)
+## Die App online stellen (Netlify, kostenlos)
 
 1. Die Datei **WriteGPT-zum-Hochladen.zip** entpacken (oder diesen Projektordner nehmen).
 2. **https://app.netlify.com/drop** öffnen.
@@ -78,8 +78,9 @@ als Bild zum Einfügen, als PNG oder als PDF.
 
 ---
 
-## Sichern & Weiterarbeiten (ohne GitHub)
+## Sichern & Weiterarbeiten
 
+- **Code & Versionen** liegen auf GitHub (`lterwersche-web/WriteGPT`). Die Wege unten gehen zusätzlich auch ganz ohne GitHub.
 - **Sicherung:** Die Datei **WriteGPT-komplett-mit-Verlauf.zip** enthält alles – inklusive der
   kompletten Versionsgeschichte (Ordner `.git`). In iCloud Drive o.ä. aufheben.
 - **Mit Claude weiterarbeiten:** Am einfachsten mit **Claude Code am Computer** (Desktop-App oder

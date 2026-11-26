@@ -12,7 +12,7 @@ Schwerpunkt: Notizen, Lernzettel und Karteikarten in der eigenen Schrift.
 - Lokal starten: `npm start` → http://localhost:8080 (braucht Node.js)
 - Tests: `npm test` (Node-Testrunner, aktuell 64 Tests in `tests/`)
 - Hosting: Netlify (Ordner hochladen). `_headers` verhindert, dass `sw.js` zwischengespeichert wird.
-- **Kein GitHub** – das Git-Repo hat absichtlich keinen Remote. Versionen nur lokal mit `git`.
+- Code liegt auf GitHub: `lterwersche-web/WriteGPT`, Zweig `claude/bold-faraday-15484t` (Remote `origin`).
 
 ## Aufbau
 | Datei | Aufgabe |
