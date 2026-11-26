@@ -56,12 +56,16 @@ Schwerpunkt: Notizen, Lernzettel und Karteikarten in der eigenen Schrift.
 - Bei Design/Aufbau-Entscheidungen erst nachfragen, wie es gewünscht ist.
 - Am Ende kurz erklären, **was** gemacht wurde und **wie** es funktioniert.
 
-## Stand (Version 1.2.0)
+## Stand (Version 1.3.0)
 - Schrift einrichten (Druck/halb verbunden/Schreibschrift, 1–3 Varianten, optionale Zeichen),
   Schritt-für-Schritt-Zeichnen mit Vorlage, mehrere Schriften.
 - Schreiben: Live-Vorschau, Meine Texte, Radierer (Lücke/Zusammenrücken), Wort-Menü,
   Lernzettel (Textmarker, farbige/zentrierte Überschriften, Merkkasten), Kopfzeile/Datum/Seitenzahlen,
   Karteikarten (A6, `---` = neue Seite), Füller, Export PNG/PDF/Kopieren, Tastenkürzel.
 - „Weiße Punkte“: laut Besitzer auf dem iPad behoben.
-- Offen: Goodnotes-Papiere 1:1 nachbauen (wartet auf leere Goodnotes-Seiten als PDF zum Ausmessen).
+- **Goodnotes-Papier** (Format `GN`, Standard): ausgemessen an exportierten Goodnotes-PDFs und per
+  Pixelvergleich geprüft. Seite 455,04 × 588,45 pt, Linien `#d0d2d3`, 0,5 pt dick.
+  Liniert breit = 25 pt, Kariert = 16-pt-Kästchen ab Ecke oben links (`GOODNOTES_LINE` in `layout.js`).
+  Papier antippen setzt den passenden Zeilenabstand. Das Muster folgt immer `pen.lineHeight`.
+- Offen: Goodnotes „Liniert schmal“, „Gepunktet“ und Größe A4 sind NICHT ausgemessen (PDFs fehlen) – nicht raten.
 - Offen: Kopiertes Bild in Goodnotes unscharf – Auflösung auf 24 px/mm erhöht, Bestätigung auf dem iPad fehlt.

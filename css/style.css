@@ -777,6 +777,12 @@ input[type='range']::-moz-range-thumb {
   font-weight: 650;
 }
 
+/* Ab 5 Einträgen (Seitenformate): Breite nach Textlänge statt gleich breit */
+.segmented:has(button:nth-child(5)) button {
+  flex: 1 1 auto;
+  padding-inline: 8px;
+}
+
 .segmented-sm button {
   padding: 6px 14px;
 }

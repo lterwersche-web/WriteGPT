@@ -14,13 +14,13 @@ export const DEFAULT_PEN = {
   nib: 'fineliner', // Stiftart: fineliner (gleich dick) | fountain (Füller: dick-dünn)
   width: 0.5, // Stiftdicke in mm
   size: 4.5, // Schriftgröße: Grundlinie → Oberlinie in mm
-  lineHeight: 9, // Zeilenabstand in mm
+  lineHeight: (25 * 25.4) / 72, // Zeilenabstand in mm – 25 pt = Goodnotes „liniert breit“
   letterSpacing: 0, // zusätzlicher Buchstabenabstand (in Einheiten)
   wordSpacing: 0.55, // Wortabstand (in Einheiten)
   jitter: 0.6, // Natürlichkeit 0…1
   paper: 'lined', // blank | lined | grid | dots
   paperMargin: false, // rote Randlinie wie im Schulheft
-  format: 'A4', // A4 | A5 | A6 (Karteikarte) | Letter
+  format: 'GN', // GN (Goodnotes-Standard) | A4 | A5 | A6 (Karteikarte) | Letter
   paperInPdf: true, // Papier-Linien im PDF mitexportieren?
   // Lernzettel
   boldStyle: 'thick', // **fett** wird: thick (dicker) | marker (Textmarker) | underline

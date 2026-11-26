@@ -15,7 +15,15 @@ import { hash, rng, rangeFn } from './random.js';
 import { glyphMetrics, getVariants, resolveChar, fixVariant } from './glyphs.js';
 import { isLetter } from './charsets.js';
 
+// Ausgemessen an leeren Seiten, die aus Goodnotes als PDF exportiert wurden
+// (Größe "Goodnotes-Standard"). PDF rechnet in Punkt: 1 pt = 25,4/72 mm.
+export const PT = 25.4 / 72;
+// Zeilenabstand, damit die Schrift genau auf dem Goodnotes-Papier sitzt:
+// Liniert breit = 25 pt, Kariert = 2 Kästchen à 16 pt
+export const GOODNOTES_LINE = { lined: 25 * PT, grid: 32 * PT };
+
 export const PAGE_FORMATS = {
+  GN: { width: 455.04 * PT, height: 588.45 * PT, label: 'Goodnotes' },
   A4: { width: 210, height: 297, label: 'A4' },
   A5: { width: 148, height: 210, label: 'A5' },
   A6: { width: 148, height: 105, label: 'Karte' }, // Karteikarte (A6 quer)
@@ -42,6 +50,12 @@ const HEADING_SCALE = { h1: 1.45, h2: 1.25, h3: 1.1 };
 /** Seitengröße + Ränder in mm */
 export function pageGeometry(pen) {
   const f = PAGE_FORMATS[pen.format] ?? PAGE_FORMATS.A4;
+  if (pen.format === 'GN') {
+    // Goodnotes legt Linien & Kästchen auf Vielfache des Abstands ab der Ecke oben links.
+    // Ränder = Zeilenabstand → unsere Linien und Grundlinien landen genau darauf.
+    const lh = pen.lineHeight;
+    return { width: f.width, height: f.height, margin: { top: lh, right: 8, bottom: 4, left: lh } };
+  }
   const k = f.width / 210; // A5 bekommt kleinere Ränder
   return {
     width: f.width,

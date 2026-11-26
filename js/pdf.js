@@ -7,7 +7,7 @@
 // Vorteil: Die Schrift bleibt VEKTOR → in Goodnotes gestochen scharf,
 // egal wie weit man reinzoomt.
 
-import { strokeRuns, paperPattern, PAPER_COLORS, nibBuckets, nibWidth, MARKER_ALPHA } from './render.js';
+import { strokeRuns, paperPattern, PAPER_COLORS, PAPER_LINE_WIDTH, nibBuckets, nibWidth, MARKER_ALPHA } from './render.js';
 
 const MM_TO_PT = 72 / 25.4; // PDF rechnet in "Punkt": 1 Zoll = 72 pt
 
@@ -20,7 +20,7 @@ function hexToRgb(hex) {
   const h = hex.replace('#', '');
   const full = h.length === 3 ? [...h].map((c) => c + c).join('') : h;
   const n = parseInt(full, 16);
-  return [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => num(v / 255));
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => num(v / 255, 4)); // 4 Stellen, sonst verfälscht Runden die Farbe
 }
 
 /** Zeichenbefehle für eine Seite */
@@ -33,8 +33,9 @@ function pageContent(page, geo, pen, withPaper) {
 
   if (withPaper) {
     const { lines, dots, marginLine, color } = paperPattern(geo, pen);
-    out.push(`${hexToRgb(color).join(' ')} RG ${num(0.2 * MM_TO_PT)} w 0 J`);
-    for (const [x1, y1, x2, y2] of lines) out.push(`${X(x1)} ${Y(y1)} m ${X(x2)} ${Y(y2)} l S`);
+    out.push(`${hexToRgb(color).join(' ')} RG ${num(PAPER_LINE_WIDTH * MM_TO_PT)} w 0 J`);
+    const P = (x, y) => `${num(x * MM_TO_PT)} ${num((H - y) * MM_TO_PT)}`; // Papierlinien: 2 Nachkommastellen
+    for (const [x1, y1, x2, y2] of lines) out.push(`${P(x1, y1)} m ${P(x2, y2)} l S`);
     if (dots.length) {
       out.push(`${hexToRgb(PAPER_COLORS.dot).join(' ')} RG ${num(0.55 * MM_TO_PT)} w 1 J`);
       for (const [x, y] of dots) out.push(`${X(x)} ${Y(y)} m ${X(x)} ${Y(y)} l S`);

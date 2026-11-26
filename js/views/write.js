@@ -6,7 +6,7 @@
 
 import { getState, update, subscribe, EMPTY_EDITS, newDoc, switchDoc, deleteDoc, docTitle } from '../state.js';
 import { parseChatText } from '../markdown.js';
-import { layoutDocument, PAGE_FORMATS } from '../layout.js';
+import { layoutDocument, PAGE_FORMATS, GOODNOTES_LINE } from '../layout.js';
 import { renderPage } from '../render.js';
 import { createPdf } from '../pdf.js';
 import { strokesToPng, copyImage, shareOrDownload, fileName } from '../export.js';
@@ -605,6 +605,9 @@ export function createWriteView(app) {
     return sec;
   }
 
+  /** Zeilenabstand passend zum Goodnotes-Papier (nur für ausgemessene Papiere) */
+  const gnLine = (paper) => (GOODNOTES_LINE[paper] ? { lineHeight: GOODNOTES_LINE[paper] } : {});
+
   function buildPenPanel() {
     const { pen, ui } = getState();
     const setPen = (patch) => update({ pen: { ...getState().pen, ...patch } });
@@ -679,12 +682,12 @@ export function createWriteView(app) {
               { value: 'dots', label: 'Punkte' },
             ],
             pen.paper,
-            (v) => setPen({ paper: v }),
+            (v) => setPen({ paper: v, ...gnLine(v) }),
           ),
           segmented(
             Object.entries(PAGE_FORMATS).map(([value, f]) => ({ value, label: f.label })),
             pen.format,
-            (v) => setPen({ format: v }),
+            (v) => setPen({ format: v, ...gnLine(getState().pen.paper) }),
           ),
           toggleRow('Randlinie wie im Heft', !!pen.paperMargin, (v) => setPen({ paperMargin: v })),
           toggleRow('Papier-Linien im PDF', pen.paperInPdf, (v) => setPen({ paperInPdf: v })),

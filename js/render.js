@@ -211,8 +211,8 @@ export function drawMarkers(ctx, markers, scale, ox = 0, oy = 0) {
 }
 
 export const PAPER_COLORS = {
-  line: '#bccbe0',
-  grid: '#d6dfeb',
+  line: '#d0d2d3', // Linienfarbe von Goodnotes (aus dem PDF abgelesen)
+  grid: '#d0d2d3',
   dot: '#a9b6c9',
   margin: '#e8a6a6', // rote Randlinie wie im Schulheft
 };
@@ -222,22 +222,26 @@ export const PAPER_COLORS = {
  * Kariert & Gepunktet: Kästchen = halber Zeilenabstand, so liegen die
  * Schreib-Linien immer genau auf einer Kästchen-Linie.
  */
+export const PAPER_LINE_WIDTH = 0.5 * (25.4 / 72); // 0,5 pt wie bei Goodnotes
+
 export function paperPattern(geo, pen) {
   const { width, height, margin } = geo;
   const lh = pen.lineHeight;
   const lines = [];
   const dots = [];
+  // Goodnotes zeichnet die Linie knapp ÜBER bzw. LINKS vom Rasterpunkt (halbe Liniendicke)
+  const e = PAPER_LINE_WIDTH / 2;
   if (pen.paper === 'lined') {
     for (let y = margin.top + lh; y <= height - margin.bottom + 0.01; y += lh) {
-      lines.push([0, y, width, y]);
+      lines.push([0, y - e, width, y - e]);
     }
   } else if (pen.paper === 'grid' || pen.paper === 'dots') {
     const g = lh / 2;
     const y0 = margin.top % g;
     const x0 = margin.left % g;
     if (pen.paper === 'grid') {
-      for (let y = y0; y <= height; y += g) lines.push([0, y, width, y]);
-      for (let x = x0; x <= width; x += g) lines.push([x, 0, x, height]);
+      for (let y = y0; y <= height; y += g) lines.push([0, y - e, width, y - e]);
+      for (let x = x0; x <= width; x += g) lines.push([x - e, 0, x - e, height]);
     } else {
       for (let y = y0 + g; y < height; y += g) {
         for (let x = x0 + g; x < width; x += g) dots.push([x, y]);
@@ -255,7 +259,7 @@ export function drawPaper(ctx, geo, pen, scale) {
   ctx.fillRect(0, 0, geo.width * scale, geo.height * scale);
   const { lines, dots, marginLine, color } = paperPattern(geo, pen);
   ctx.strokeStyle = color;
-  ctx.lineWidth = Math.max(1, 0.2 * scale);
+  ctx.lineWidth = Math.max(1, PAPER_LINE_WIDTH * scale);
   ctx.beginPath();
   for (const [x1, y1, x2, y2] of lines) {
     ctx.moveTo(x1 * scale, y1 * scale);

@@ -12,7 +12,7 @@ import { shareOrDownload } from '../export.js';
 import { icon } from '../icons.js';
 import { toast, confirmDialog, promptDialog, showGoodnotesTip, showOnboarding, SHORTCUTS, segmented, toggle, esc } from '../ui.js';
 
-export const APP_VERSION = '1.2.0';
+export const APP_VERSION = '1.3.0';
 
 export function createSettingsView(app) {
   const el = document.createElement('section');

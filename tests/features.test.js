@@ -110,3 +110,30 @@ test('PDF mit Textmarker bekommt einen Transparenz-Zustand', async () => {
   assert.match(s, /\/Type \/ExtGState \/CA 0\.5 \/ca 0\.5/);
   assert.match(s, /\/ExtGState << \/GSm \d+ 0 R >>/);
 });
+
+test('Goodnotes-Papier: Linien genau wie im ausgemessenen Goodnotes-PDF', async () => {
+  const { paperPattern, PAPER_COLORS } = await import('../js/render.js');
+  const { PT, GOODNOTES_LINE } = await import('../js/layout.js');
+  const pt = (mm) => Math.round((mm / PT) * 100) / 100;
+  // Liniert breit: 22 Linien, Oberkante bei 49,5 pt, dann alle 25 pt
+  let pen = { ...PEN, format: 'GN', paper: 'lined', lineHeight: GOODNOTES_LINE.lined };
+  let geo = pageGeometry(pen);
+  assert.deepEqual([pt(geo.width), pt(geo.height)], [455.04, 588.45]);
+  const ys = paperPattern(geo, pen).lines.map((l) => pt(l[1]));
+  assert.equal(ys.length, 22);
+  assert.deepEqual(ys.slice(0, 3), [49.75, 74.75, 99.75]); // Linienmitte = Oberkante 49,5 + halbe Dicke
+  assert.equal(ys.at(-1), 574.75);
+  assert.equal(PAPER_COLORS.line, '#d0d2d3');
+  // Text sitzt auf den Linien: 22 Zeilen pro Seite
+  assert.equal(Math.floor((geo.height - geo.margin.top - geo.margin.bottom) / pen.lineHeight), 22);
+  // Kariert: Kästchen 16 pt ab der Ecke oben links
+  pen = { ...pen, paper: 'grid', lineHeight: GOODNOTES_LINE.grid };
+  geo = pageGeometry(pen);
+  const lines = paperPattern(geo, pen).lines;
+  const hs = lines.filter((l) => l[1] === l[3]).map((l) => pt(l[1])).filter((v) => v > 0);
+  const vs = lines.filter((l) => l[0] === l[2]).map((l) => pt(l[0])).filter((v) => v > 0);
+  assert.deepEqual(hs.slice(0, 3), [15.75, 31.75, 47.75]);
+  assert.deepEqual(vs.slice(0, 3), [15.75, 31.75, 47.75]);
+  assert.equal(hs.at(-1), 575.75);
+  assert.equal(vs.at(-1), 447.75);
+});
