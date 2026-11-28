@@ -534,6 +534,7 @@ kbd {
 .pages {
   display: flex;
   flex-direction: column;
+  align-items: center; /* schmalere Seiten stehen in der Mitte */
   gap: 22px;
   max-width: 820px;
   margin: 0 auto;

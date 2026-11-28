@@ -225,11 +225,16 @@ export function createWriteView(app) {
     }
 
     const dpr = window.devicePixelRatio || 1;
-    const cssWidth = Math.max(200, pagesEl.clientWidth);
+    // Ganze Seite sichtbar: so breit, dass die Seitenhöhe in den sichtbaren Bereich passt
+    // (70 px = Rand oben/unten + Zeile "Seite 1 von 2"). Auf sehr kleinen Bildschirmen
+    // würde die Seite winzig → dort füllt sie wie bisher die Breite.
+    const fitWidth = ((scrollEl.clientHeight - 70) * layout.geo.width) / layout.geo.height;
+    const cssWidth = Math.max(200, fitWidth >= 300 ? Math.min(pagesEl.clientWidth, fitWidth) : pagesEl.clientWidth);
     const scale = (cssWidth * dpr) / layout.geo.width;
     [...pagesEl.children].forEach((wrap, i) => {
       const canvas = wrap.querySelector('canvas');
       renderPage(canvas, layout.pages[i], layout.geo, pen, { scale, paper: true, missing: true, ghosts: eraserOn, area: layout.area });
+      wrap.style.width = `${cssWidth}px`;
       canvas.style.width = `${cssWidth}px`;
       canvas.style.height = `${(cssWidth * layout.geo.height) / layout.geo.width}px`;
       wrap.dataset.index = i;
@@ -1128,10 +1133,12 @@ export function createWriteView(app) {
     if (menuWord && ('edits' in patch || 'text' in patch || 'pen' in patch)) closeWordMenu();
     schedule();
   });
-  new ResizeObserver(() => {
+  const resizeWatch = new ResizeObserver(() => {
     closeWordMenu();
     schedule();
-  }).observe(pagesEl);
+  });
+  resizeWatch.observe(pagesEl);
+  resizeWatch.observe(scrollEl); // Höhe ändert sich z.B. beim Drehen des iPads
 
   return {
     el,
