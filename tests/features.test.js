@@ -179,3 +179,19 @@ test('Bereich: ganze Seite = kein Rahmen, keine Warnung; Kopieren ignoriert die 
   // passt der Text in den Bereich, gibt es keine Warnung
   assert.equal(lay('Kurz', { startLine: 10, lineCount: 5 }).overflowLines, 0);
 });
+
+test('Schrift anpassen: größte Größe, die in den Bereich passt', async () => {
+  const { fitSizeToArea } = await import('../js/layout.js');
+  const blocks = parseChatText('Ein Satz mit einigen Wörtern für mehrere Zeilen. '.repeat(6));
+  const font = fakeFont();
+  const pen = { ...PEN, startLine: 20, lineCount: 4 };
+  const over = (size) => layoutDocument(blocks, font, { ...pen, size }).overflowLines;
+  assert.ok(over(pen.size) > 0, 'Ausgangslage: passt nicht');
+  const size = fitSizeToArea(blocks, font, pen);
+  assert.ok(size < pen.size && size >= 2.5);
+  assert.equal(over(size), 0, 'passt mit der gefundenen Größe');
+  assert.ok(over(size + 0.1) > 0, 'eine Stufe größer passt nicht mehr → wirklich die größte');
+  // passt schon → Größe bleibt; viel zu viel Text → null
+  assert.equal(fitSizeToArea(parseChatText('Kurz'), font, pen), pen.size);
+  assert.equal(fitSizeToArea(parseChatText('Wort '.repeat(3000)), font, pen), null);
+});

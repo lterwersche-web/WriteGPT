@@ -383,9 +383,8 @@ label.btn {
   color: var(--accent);
 }
 
-.chip-warn {
-  background: var(--warn-soft);
-  color: var(--warn);
+.area-banner {
+  margin-bottom: 10px;
 }
 
 /* Bereichs-Vorlagen: kleine Seiten, der blaue Teil zeigt den Bereich */

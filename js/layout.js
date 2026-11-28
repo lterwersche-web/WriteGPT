@@ -642,3 +642,24 @@ export function layoutDocument(blocks, font, pen, { continuous = false, edits = 
 
   return { pages, geo, missingChars: [...missingChars], key, area, overflowLines };
 }
+
+/**
+ * Sucht die größte Schriftgröße (in 0,1-mm-Schritten, höchstens die aktuelle),
+ * bei der der Text in den gewählten Bereich passt. Der Zeilenabstand bleibt gleich,
+ * damit die Schrift auf den Linien sitzt. Gibt null zurück, wenn selbst minSize nicht reicht.
+ * Trick "Halbieren": immer in der Mitte probieren → wenige Versuche statt alle Größen.
+ */
+export function fitSizeToArea(blocks, font, pen, opts = {}, minSize = 2.5) {
+  const fits = (tenths) => layoutDocument(blocks, font, { ...pen, size: tenths / 10 }, opts).overflowLines === 0;
+  let hi = Math.round(pen.size * 10);
+  if (fits(hi)) return hi / 10; // passt schon
+  let lo = Math.round(minSize * 10);
+  if (lo >= hi || !fits(lo)) return null;
+  // lo passt immer, hi passt nie → Abstand halbieren, bis sie nebeneinander liegen
+  while (hi - lo > 1) {
+    const mid = Math.floor((lo + hi) / 2);
+    if (fits(mid)) lo = mid;
+    else hi = mid;
+  }
+  return lo / 10;
+}

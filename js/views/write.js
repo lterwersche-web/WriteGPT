@@ -6,7 +6,7 @@
 
 import { getState, update, subscribe, EMPTY_EDITS, newDoc, switchDoc, deleteDoc, docTitle } from '../state.js';
 import { parseChatText } from '../markdown.js';
-import { layoutDocument, pageGeometry, pageLines, PAGE_FORMATS, GOODNOTES_LINE } from '../layout.js';
+import { layoutDocument, fitSizeToArea, pageGeometry, pageLines, PAGE_FORMATS, GOODNOTES_LINE } from '../layout.js';
 import { renderPage } from '../render.js';
 import { createPdf } from '../pdf.js';
 import { strokesToPng, copyImage, shareOrDownload, fileName } from '../export.js';
@@ -76,10 +76,15 @@ export function createWriteView(app) {
 
       <div class="card preview-card">
         <div class="card-head">
-          <h2>Vorschau <span class="chip page-count">1 Seite</span><span class="chip chip-warn area-warn" hidden></span></h2>
+          <h2>Vorschau <span class="chip page-count">1 Seite</span></h2>
           <div class="head-actions">
             <button class="btn btn-ghost btn-sm" data-act="shuffle" title="Zufall neu würfeln">${icon('dice')}<span>Neu mischen</span></button>
           </div>
+        </div>
+        <div class="missing-banner area-banner" hidden>
+          <div class="missing-icon">${icon('warning')}</div>
+          <div class="missing-text"><span class="area-warn"></span></div>
+          <button class="btn btn-sm" data-act="fit-area">Schrift anpassen</button>
         </div>
         <div class="preview-scroll">
           <div class="pages"></div>
@@ -204,8 +209,8 @@ export function createWriteView(app) {
     $('.page-count').textContent = `${n} ${n === 1 ? 'Seite' : 'Seiten'}`;
     // Warnung, wenn der Text nicht in den gewählten Bereich passt
     const over = layout.overflowLines;
-    $('.area-warn').hidden = !over;
-    $('.area-warn').textContent = `Passt nicht: ${over} ${over === 1 ? 'Zeile' : 'Zeilen'} zu viel`;
+    $('.area-banner').hidden = !over;
+    $('.area-warn').textContent = `Passt nicht in den Bereich: ${over} ${over === 1 ? 'Zeile' : 'Zeilen'} zu viel`;
     renderMissing(layout.missingChars);
     paintEraserBar();
     if (!hasFont) return;
@@ -1083,6 +1088,18 @@ export function createWriteView(app) {
     textarea.focus();
   }
 
+  /** Schrift so weit verkleinern, dass der Text in den gewählten Bereich passt */
+  function onFitArea() {
+    const { font, pen, text } = getState();
+    const size = fitSizeToArea(parseChatText(text), font, pen, { edits: currentEdits() });
+    if (size === null) {
+      toast('Zu viel Text: Das passt auch mit der kleinsten Schrift nicht in den Bereich.', 'error', 4500);
+      return;
+    }
+    update({ pen: { ...pen, size } });
+    toast(`Schrift auf ${de(size)} mm verkleinert – passt jetzt.`, 'success');
+  }
+
   /** Button zeigt einen Lade-Kreisel, solange fn() arbeitet */
   function busy(btn, fn) {
     if (btn.classList.contains('loading')) return;
@@ -1106,6 +1123,7 @@ export function createWriteView(app) {
       setText(SAMPLE);
     }
     else if (act === 'eraser') setEraser(!eraserOn);
+    else if (act === 'fit-area') onFitArea();
     else if (act === 'eraser-done') setEraser(false);
     else if (act === 'gn-tip') showGoodnotesTip();
     else if (act === 'undo-edit') {

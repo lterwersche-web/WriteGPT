@@ -70,7 +70,8 @@ Schwerpunkt: Notizen, Lernzettel und Karteikarten in der eigenen Schrift.
 - **Bereich der Seite** (Stift & Papier → Seite): Vorlagen (oben/unten ½ ⅓ ¼, links/rechts ½) und
   Feinregler. Gespeichert als `pen.startLine`, `pen.lineCount`, `pen.indent` (mm), `pen.lineLength` (mm);
   alles 0 = ganze Seite. Gerechnet wird in ganzen Zeilen bzw. Kästchen, damit der Text auf den Linien sitzt.
-  Vorschau zeigt einen Rahmen (`layout.area`), `layout.overflowLines` löst die Warnung „Passt nicht“ aus.
+  Vorschau zeigt einen Rahmen (`layout.area`), `layout.overflowLines` löst den Hinweis „Passt nicht“ aus; der Knopf „Schrift anpassen“
+  (`fitSizeToArea`) verkleinert nur die Schriftgröße, nie den Zeilenabstand.
   Beim Kopieren (`continuous`) zählt nur die Breite.
 - Offen: Goodnotes „Liniert schmal“, „Gepunktet“ und Größe A4 sind NICHT ausgemessen (PDFs fehlen) – nicht raten.
 - Offen: Kopiertes Bild in Goodnotes unscharf – Auflösung auf 24 px/mm erhöht, Bestätigung auf dem iPad fehlt.
