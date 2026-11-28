@@ -328,14 +328,25 @@ export function contentBounds(page) {
 /**
  * Malt eine komplette Seite.
  * options: scale (Pixel pro mm), paper (Papier ja/nein), missing (Platzhalter zeigen),
- *          ghosts (wegradierte Buchstaben blass zeigen)
+ *          ghosts (wegradierte Buchstaben blass zeigen), area (Bereichs-Rahmen zeigen)
  */
-export function renderPage(canvas, page, geo, pen, { scale, paper = true, missing = true, ghosts = false }) {
+export function renderPage(canvas, page, geo, pen, { scale, paper = true, missing = true, ghosts = false, area = null }) {
   canvas.width = Math.round(geo.width * scale);
   canvas.height = Math.round(geo.height * scale);
   const ctx = canvas.getContext('2d');
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   if (paper) drawPaper(ctx, geo, pen, scale);
+  if (area) {
+    // Gewählter Bereich der Seite: blauer, gestrichelter Rahmen (kommt nicht in den Export)
+    ctx.save();
+    ctx.fillStyle = 'rgba(0, 122, 255, 0.05)';
+    ctx.strokeStyle = 'rgba(0, 122, 255, 0.6)';
+    ctx.lineWidth = Math.max(1, 0.25 * scale);
+    ctx.setLineDash([1.6 * scale, 1.2 * scale]);
+    ctx.fillRect(area.x0 * scale, area.y0 * scale, (area.x1 - area.x0) * scale, (area.y1 - area.y0) * scale);
+    ctx.strokeRect(area.x0 * scale, area.y0 * scale, (area.x1 - area.x0) * scale, (area.y1 - area.y0) * scale);
+    ctx.restore();
+  }
   drawMarkers(ctx, page.markers, scale);
   // Wegradierte Buchstaben ganz blass anzeigen (nur im Radier-Modus)
   if (ghosts && page.ghosts?.length) {

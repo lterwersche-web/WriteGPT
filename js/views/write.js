@@ -6,7 +6,7 @@
 
 import { getState, update, subscribe, EMPTY_EDITS, newDoc, switchDoc, deleteDoc, docTitle } from '../state.js';
 import { parseChatText } from '../markdown.js';
-import { layoutDocument, pageGeometry, PAGE_FORMATS, GOODNOTES_LINE } from '../layout.js';
+import { layoutDocument, pageGeometry, pageLines, PAGE_FORMATS, GOODNOTES_LINE } from '../layout.js';
 import { renderPage } from '../render.js';
 import { createPdf } from '../pdf.js';
 import { strokesToPng, copyImage, shareOrDownload, fileName } from '../export.js';
@@ -76,7 +76,7 @@ export function createWriteView(app) {
 
       <div class="card preview-card">
         <div class="card-head">
-          <h2>Vorschau <span class="chip page-count">1 Seite</span></h2>
+          <h2>Vorschau <span class="chip page-count">1 Seite</span><span class="chip chip-warn area-warn" hidden></span></h2>
           <div class="head-actions">
             <button class="btn btn-ghost btn-sm" data-act="shuffle" title="Zufall neu würfeln">${icon('dice')}<span>Neu mischen</span></button>
           </div>
@@ -202,6 +202,10 @@ export function createWriteView(app) {
     $('.char-count').textContent = `${words.toLocaleString('de-DE')} ${words === 1 ? 'Wort' : 'Wörter'} · ${n} ${n === 1 ? 'Seite' : 'Seiten'}`;
     $('[data-act="sample"]').hidden = !!text.trim();
     $('.page-count').textContent = `${n} ${n === 1 ? 'Seite' : 'Seiten'}`;
+    // Warnung, wenn der Text nicht in den gewählten Bereich passt
+    const over = layout.overflowLines;
+    $('.area-warn').hidden = !over;
+    $('.area-warn').textContent = `Passt nicht: ${over} ${over === 1 ? 'Zeile' : 'Zeilen'} zu viel`;
     renderMissing(layout.missingChars);
     paintEraserBar();
     if (!hasFont) return;
@@ -225,7 +229,7 @@ export function createWriteView(app) {
     const scale = (cssWidth * dpr) / layout.geo.width;
     [...pagesEl.children].forEach((wrap, i) => {
       const canvas = wrap.querySelector('canvas');
-      renderPage(canvas, layout.pages[i], layout.geo, pen, { scale, paper: true, missing: true, ghosts: eraserOn });
+      renderPage(canvas, layout.pages[i], layout.geo, pen, { scale, paper: true, missing: true, ghosts: eraserOn, area: layout.area });
       canvas.style.width = `${cssWidth}px`;
       canvas.style.height = `${(cssWidth * layout.geo.height) / layout.geo.width}px`;
       wrap.dataset.index = i;
@@ -614,7 +618,7 @@ export function createWriteView(app) {
    */
   function lineLengthSlider(pen, setPen) {
     const geo = pageGeometry(pen);
-    const full = geo.width - geo.margin.left - geo.margin.right;
+    const full = geo.width - geo.margin.left - geo.margin.right - (pen.indent || 0); // Platz rechts vom Abstand
     const grid = pen.paper === 'grid';
     const step = grid ? pen.lineHeight / 2 : 1; // ein Kästchen bzw. 1 mm
     const n = Math.floor(full / step + 1e-6); // so viele Schritte passen auf die Seite
@@ -631,7 +635,86 @@ export function createWriteView(app) {
     });
   }
 
+  // ── Bereich der Seite: Vorlagen + Feineinstellung ────────
+  // v = Anteil der Seitenhöhe [von, bis], h = Anteil der Breite [von, bis]
+  const AREAS = [
+    { label: 'Ganze Seite', v: [0, 1], h: [0, 1] },
+    { label: 'Oben ½', v: [0, 1 / 2], h: [0, 1] },
+    { label: 'Oben ⅓', v: [0, 1 / 3], h: [0, 1] },
+    { label: 'Oben ¼', v: [0, 1 / 4], h: [0, 1] },
+    { label: 'Links ½', v: [0, 1], h: [0, 1 / 2] },
+    { label: 'Unten ½', v: [1 / 2, 1], h: [0, 1] },
+    { label: 'Unten ⅓', v: [2 / 3, 1], h: [0, 1] },
+    { label: 'Unten ¼', v: [3 / 4, 1], h: [0, 1] },
+    { label: 'Rechts ½', v: [0, 1], h: [1 / 2, 1] },
+  ];
+
+  /** Schrittweite waagerecht: ein Kästchen auf Kariert, sonst 1 mm */
+  const hStep = (pen) => (pen.paper === 'grid' ? pen.lineHeight / 2 : 1);
+
+  /** Vorlage → Einstellungen. Rechnet in ganzen Zeilen/Kästchen, damit alles auf den Linien sitzt. */
+  function areaValues(pen, a) {
+    const N = pageLines(pen);
+    const geo = pageGeometry(pen);
+    const step = hStep(pen);
+    const cols = (geo.width - geo.margin.left - geo.margin.right) / step;
+    const count = Math.max(1, Math.round(N * (a.v[1] - a.v[0])));
+    return {
+      startLine: a.v[0] > 0 ? N - count : 0,
+      lineCount: a.v[1] < 1 ? count : 0,
+      indent: Math.round(cols * a.h[0]) * step,
+      lineLength: a.h[1] < 1 ? Math.round(cols * (a.h[1] - a.h[0])) * step : 0,
+    };
+  }
+
+  function areaSection(pen, setPen) {
+    const wrap = document.createElement('div');
+    const presets = document.createElement('div');
+    presets.className = 'area-presets';
+    for (const a of AREAS) {
+      const val = areaValues(pen, a);
+      const on = Object.keys(val).every((k) => Math.abs((pen[k] || 0) - val[k]) < 1e-6);
+      const b = document.createElement('button');
+      b.className = `area-preset${on ? ' active' : ''}`;
+      b.setAttribute('aria-pressed', on);
+      // Mini-Seite: der blaue Teil zeigt, wo der Text landet
+      b.innerHTML = `<span class="mini-page"><i style="left:${a.h[0] * 100}%;top:${a.v[0] * 100}%;width:${(a.h[1] - a.h[0]) * 100}%;height:${(a.v[1] - a.v[0]) * 100}%"></i></span><span>${a.label}</span>`;
+      b.onclick = () => {
+        setPen(val);
+        buildPenPanel();
+      };
+      presets.append(b);
+    }
+
+    // Feineinstellung
+    const N = pageLines(pen);
+    const start = Math.min(pen.startLine || 0, N - 1);
+    const rest = N - start;
+    const geo = pageGeometry(pen);
+    const step = hStep(pen);
+    const grid = pen.paper === 'grid';
+    const cols = Math.floor((geo.width - geo.margin.left - geo.margin.right) / step + 1e-6);
+    const maxIndent = Math.max(0, cols - Math.ceil(30 / step)); // rechts bleiben mind. ca. 3 cm
+    const len = (v) => `${de((v * step) / 10)} cm${grid ? ` · ${v} Kästchen` : ''}`;
+    const sliders = [
+      slider({ label: 'Beginnt in Zeile', min: 1, max: N, step: 1, value: start + 1, format: (v) => `${v} von ${N}`, onInput: (v) => setPen({ startLine: v - 1 }) }),
+      slider({
+        label: 'Höhe', min: 1, max: rest + 1, step: 1,
+        value: pen.lineCount > 0 ? Math.min(pen.lineCount, rest) : rest + 1,
+        format: (v) => (v > rest ? 'bis unten' : `${v} ${v === 1 ? 'Zeile' : 'Zeilen'} · ${de((v * pen.lineHeight) / 10)} cm`),
+        onInput: (v) => setPen({ lineCount: v > rest ? 0 : v }),
+      }),
+      slider({ label: 'Abstand von links', min: 0, max: maxIndent, step: 1, value: Math.min(maxIndent, Math.round((pen.indent || 0) / step)), format: (v) => (v === 0 ? 'keiner' : len(v)), onInput: (v) => setPen({ indent: v * step }) }),
+      lineLengthSlider(pen, setPen),
+    ];
+    // Nach dem Loslassen neu aufbauen: die Regler hängen voneinander ab (z.B. Höhe von Beginn)
+    for (const s of sliders) s.querySelector('input').addEventListener('change', buildPenPanel);
+    wrap.append(presets, ...sliders);
+    return wrap;
+  }
+
   function buildPenPanel() {
+    const scrollTop = popover.scrollTop; // Position merken, damit das Fenster beim Neuaufbau nicht springt
     const { pen, ui } = getState();
     const setPen = (patch) => update({ pen: { ...getState().pen, ...patch } });
     const tab = ui.penTab ?? 'pen';
@@ -678,7 +761,6 @@ export function createWriteView(app) {
           'Größe &amp; Abstände',
           slider({ label: 'Schriftgröße', min: 2.5, max: 10, step: 0.1, value: pen.size, format: (v) => `${de(v)} mm`, onInput: (v) => setPen({ size: v }) }),
           slider({ label: 'Zeilenabstand', min: 5, max: 18, step: 0.1, value: pen.lineHeight, format: (v) => `${de(v)} mm`, onInput: (v) => setPen({ lineHeight: v }) }),
-          lineLengthSlider(pen, setPen),
           slider({ label: 'Buchstabenabstand', min: -0.15, max: 0.4, step: 0.01, value: pen.letterSpacing, format: (v) => (v === 0 ? 'normal' : v < 0 ? 'enger' : 'weiter'), onInput: (v) => setPen({ letterSpacing: v }) }),
           slider({ label: 'Wortabstand', min: 0.25, max: 1.2, step: 0.01, value: pen.wordSpacing, format: (v) => `${Math.round(v * 100)} %`, onInput: (v) => setPen({ wordSpacing: v }) }),
           slider({ label: 'Natürlichkeit', min: 0, max: 1, step: 0.01, value: pen.jitter, format: (v) => (v < 0.05 ? 'sauber' : `${Math.round(v * 100)} %`), onInput: (v) => setPen({ jitter: v }) }),
@@ -716,6 +798,7 @@ export function createWriteView(app) {
           toggleRow('Randlinie wie im Heft', !!pen.paperMargin, (v) => setPen({ paperMargin: v })),
           toggleRow('Papier-Linien im PDF', pen.paperInPdf, (v) => setPen({ paperInPdf: v })),
         ),
+        section('Bereich der Seite', areaSection(pen, setPen)),
         section(
           'Kopfzeile &amp; Seitenzahlen',
           header,
@@ -766,6 +849,7 @@ export function createWriteView(app) {
     };
     body.append(reset);
     popover.querySelector('[data-act="close-pen"]').onclick = () => setPopover(false);
+    popover.scrollTop = scrollTop;
   }
 
   function setPopover(open) {

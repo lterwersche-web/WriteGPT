@@ -150,3 +150,32 @@ test('Zeilenlänge: Text bricht früher um, 0 = volle Seitenbreite', () => {
   // länger als die Seite → wird auf die Seitenbreite begrenzt
   assert.equal(maxX(lay(text, { jitter: 0, lineLength: 9999 })), maxX(full));
 });
+
+test('Bereich: Text beginnt in der gewählten Zeile und bleibt im Bereich', () => {
+  const text = 'Ein Satz mit einigen Wörtern für mehrere Zeilen. '.repeat(12);
+  const geo = pageGeometry(PEN);
+  const lh = PEN.lineHeight;
+  const l = lay(text, { jitter: 0, startLine: 10, lineCount: 5, indent: 40, lineLength: 80 });
+  // erste Grundlinie = Zeile 11, linker Rand um 40 mm verschoben
+  const g0 = l.pages[0].glyphs.find((g) => g.idx === 0);
+  assert.ok(Math.abs(g0.y1 - (geo.margin.top + 11 * lh)) < 1, `y=${g0.y1}`);
+  assert.ok(g0.x0 >= geo.margin.left + 40 - 0.01);
+  assert.ok(Math.max(...l.pages[0].glyphs.map((g) => g.x1)) <= geo.margin.left + 120 + 0.01);
+  // nur 5 Zeilen pro Seite → Rest rutscht weiter und wird als "zu viel" gemeldet
+  assert.equal(l.pages[0].lines, 15);
+  assert.ok(l.pages.length > 1);
+  assert.ok(l.overflowLines > 0);
+  assert.deepEqual(l.area, { x0: geo.margin.left + 40, x1: geo.margin.left + 120, y0: geo.margin.top + 10 * lh, y1: geo.margin.top + 15 * lh });
+});
+
+test('Bereich: ganze Seite = kein Rahmen, keine Warnung; Kopieren ignoriert die Höhe', () => {
+  const text = 'Ein Satz mit einigen Wörtern für mehrere Zeilen. '.repeat(12);
+  const full = lay(text);
+  assert.equal(full.area, null);
+  assert.equal(full.overflowLines, 0);
+  const copy = lay(text, { startLine: 10, lineCount: 2 }, { continuous: true });
+  assert.equal(copy.pages.length, 1);
+  assert.equal(copy.overflowLines, 0);
+  // passt der Text in den Bereich, gibt es keine Warnung
+  assert.equal(lay('Kurz', { startLine: 10, lineCount: 5 }).overflowLines, 0);
+});

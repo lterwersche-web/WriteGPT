@@ -5,7 +5,7 @@
 // Ausgabe:  Seiten mit fertigen Strichen in Millimetern
 //
 //   { pages: [{ strokes: [{ pts: [x,y,x,y…], w }], ghosts, missing, glyphs }],
-//     geo: { width, height, margin }, missingChars: ['ß', …], key }
+//     geo: { width, height, margin }, missingChars: ['ß', …], key, area, overflowLines }
 //
 //   glyphs = pro Zeichen eine Box { idx, ch, x0, y0, x1, y1, strokes } → Radierer & Antippen
 //
@@ -65,6 +65,12 @@ export function pageGeometry(pen) {
 }
 
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+
+/** So viele Zeilen passen auf eine Seite */
+export function pageLines(pen) {
+  const { height, margin } = pageGeometry(pen);
+  return Math.max(1, Math.floor((height - margin.top - margin.bottom) / pen.lineHeight));
+}
 
 function normalize([x, y]) {
   const d = Math.hypot(x, y) || 1;
@@ -166,14 +172,17 @@ export function germanDate(d) {
 export function layoutDocument(blocks, font, pen, { continuous = false, edits = null, date = new Date() } = {}) {
   const geo = pageGeometry(pen);
   const { margin } = geo;
-  const left = margin.left;
-  // Zeilenlänge: kürzer als die Seite → Text bricht früher um (z.B. zum Einfügen in eine schmale Stelle)
+  // Bereich: Der Text kann in einem Teil der Seite stehen (z.B. unteres Drittel, rechte Hälfte).
+  // Waagerecht: Abstand von links + Zeilenlänge. Senkrecht: erste Zeile + Anzahl Zeilen.
+  const pageLeft = margin.left;
   const fullRight = geo.width - margin.right;
+  const left = Math.min(pageLeft + Math.max(0, pen.indent || 0), fullRight - 20);
   const right = pen.lineLength > 0 ? Math.min(fullRight, left + pen.lineLength) : fullRight;
   const lh = pen.lineHeight;
-  const maxLines = continuous
-    ? Infinity
-    : Math.max(1, Math.floor((geo.height - margin.top - margin.bottom) / lh));
+  const total = pageLines(pen);
+  // Beim Kopieren (continuous) zählt nur die Breite – das Bild wird eh zugeschnitten
+  const first = continuous ? 0 : clamp(pen.startLine || 0, 0, total - 1);
+  const maxLines = continuous ? Infinity : pen.lineCount > 0 ? Math.min(total, first + pen.lineCount) : total;
   const style = STYLES[font.style] ?? STYLES.print;
   const jit = clamp(pen.jitter, 0, 1);
   const seed = pen.seed >>> 0;
@@ -189,7 +198,7 @@ export function layoutDocument(blocks, font, pen, { continuous = false, edits = 
   const counter = { value: 0 };
   let key = '';
   let page;
-  let lineNo = 0;
+  let lineNo = first;
   let lineCounter = 0;
 
   let box = null; // offener Merkkasten { page, from }
@@ -200,8 +209,8 @@ export function layoutDocument(blocks, font, pen, { continuous = false, edits = 
     if (box) closeBox();
     page = { strokes: [], ghosts: [], missing: [], glyphs: [], markers: [], lines: 0 };
     pages.push(page);
-    lineNo = 0;
-    if (continueBox) box = { page, from: 0 };
+    lineNo = first;
+    if (continueBox) box = { page, from: first };
   };
   newPage();
 
@@ -510,14 +519,14 @@ export function layoutDocument(blocks, font, pen, { continuous = false, edits = 
     if (box && block.type !== 'quote') closeBox();
 
     if (block.type === 'blank') {
-      if (lineNo > 0) advance();
+      if (lineNo > first) advance();
       prevType = 'blank';
       continue;
     }
     if (block.type === 'hr') {
       if (pen.hrPageBreak && !continuous) {
         // --- = neue Seite (z.B. eine Karteikarte pro Thema)
-        if (lineNo > 0 || page.strokes.length) newPage();
+        if (lineNo > first || page.strokes.length) newPage();
       } else {
         commitLine([], { line: { x0: left, x1: right, y: -0.3 * pen.size } });
       }
@@ -532,7 +541,7 @@ export function layoutDocument(blocks, font, pen, { continuous = false, edits = 
     const color = isHeading ? headingColor : null;
 
     // Überschrift: Leerzeile davor (außer ganz oben)
-    if (isHeading && lineNo > 0 && prevType && prevType !== 'blank') advance();
+    if (isHeading && lineNo > first && prevType && prevType !== 'blank') advance();
 
     const indentX = left + (block.indent ?? 0) * pen.size * 1.6;
     let textX = indentX;
@@ -612,10 +621,10 @@ export function layoutDocument(blocks, font, pen, { continuous = false, edits = 
   pages.forEach((pg, i) => {
     const base = -100000 * (i + 1); // eigene Nummern (negativ), damit sie nicht mit dem Text kollidieren
     const hdrY = margin.top - Math.min(lh * 0.3, 3);
-    if (pen.headerText?.trim()) stampText(pg, pen.headerText.trim(), left, hdrY, hdrSize, base);
-    if (pen.headerDate) stampText(pg, germanDate(date), right, hdrY, hdrSize, base + 500, true);
+    if (pen.headerText?.trim()) stampText(pg, pen.headerText.trim(), pageLeft, hdrY, hdrSize, base);
+    if (pen.headerDate) stampText(pg, germanDate(date), fullRight, hdrY, hdrSize, base + 500, true);
     if (pen.pageNumbers && !continuous) {
-      stampText(pg, String(i + 1), right, geo.height - margin.bottom * 0.4, hdrSize, base + 900, true);
+      stampText(pg, String(i + 1), fullRight, geo.height - margin.bottom * 0.4, hdrSize, base + 900, true);
     }
   });
 
@@ -623,5 +632,13 @@ export function layoutDocument(blocks, font, pen, { continuous = false, edits = 
     geo.height = margin.top + (pages[0].lines + 1) * lh + margin.bottom;
   }
 
-  return { pages, geo, missingChars: [...missingChars], key };
+  // Bereich für den Rahmen in der Vorschau (null = ganze Seite)
+  const vertical = !continuous && (first > 0 || maxLines < total);
+  const area = vertical || left > pageLeft || right < fullRight
+    ? { x0: left, x1: right, y0: margin.top + first * lh, y1: margin.top + (continuous ? total : maxLines) * lh }
+    : null;
+  // Passt der Text nicht in den Bereich? → Zeilen zählen, die auf Folgeseiten gerutscht sind
+  const overflowLines = vertical ? pages.slice(1).reduce((sum, p) => sum + Math.max(0, p.lines - first), 0) : 0;
+
+  return { pages, geo, missingChars: [...missingChars], key, area, overflowLines };
 }
