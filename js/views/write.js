@@ -6,7 +6,7 @@
 
 import { getState, update, subscribe, EMPTY_EDITS, newDoc, switchDoc, deleteDoc, docTitle } from '../state.js';
 import { parseChatText } from '../markdown.js';
-import { layoutDocument, PAGE_FORMATS, GOODNOTES_LINE } from '../layout.js';
+import { layoutDocument, pageGeometry, PAGE_FORMATS, GOODNOTES_LINE } from '../layout.js';
 import { renderPage } from '../render.js';
 import { createPdf } from '../pdf.js';
 import { strokesToPng, copyImage, shareOrDownload, fileName } from '../export.js';
@@ -608,6 +608,29 @@ export function createWriteView(app) {
   /** Zeilenabstand passend zum Goodnotes-Papier (nur für ausgemessene Papiere) */
   const gnLine = (paper) => (GOODNOTES_LINE[paper] ? { lineHeight: GOODNOTES_LINE[paper] } : {});
 
+  /**
+   * Regler "Zeilenlänge". Ganz rechts = volle Seitenbreite (gespeichert als 0).
+   * Auf kariertem Papier rastet er auf ganze Kästchen ein, sonst auf Millimeter.
+   */
+  function lineLengthSlider(pen, setPen) {
+    const geo = pageGeometry(pen);
+    const full = geo.width - geo.margin.left - geo.margin.right;
+    const grid = pen.paper === 'grid';
+    const step = grid ? pen.lineHeight / 2 : 1; // ein Kästchen bzw. 1 mm
+    const n = Math.floor(full / step + 1e-6); // so viele Schritte passen auf die Seite
+    const min = Math.min(n, Math.ceil(30 / step)); // mindestens ca. 3 cm
+    const value = pen.lineLength > 0 ? Math.max(min, Math.min(n, Math.round(pen.lineLength / step))) : n + 1;
+    return slider({
+      label: 'Zeilenlänge',
+      min,
+      max: n + 1,
+      step: 1,
+      value,
+      format: (v) => (v > n ? 'volle Breite' : `${de((v * step) / 10)} cm${grid ? ` · ${v} Kästchen` : ''}`),
+      onInput: (v) => setPen({ lineLength: v > n ? 0 : v * step }),
+    });
+  }
+
   function buildPenPanel() {
     const { pen, ui } = getState();
     const setPen = (patch) => update({ pen: { ...getState().pen, ...patch } });
@@ -655,6 +678,7 @@ export function createWriteView(app) {
           'Größe &amp; Abstände',
           slider({ label: 'Schriftgröße', min: 2.5, max: 10, step: 0.1, value: pen.size, format: (v) => `${de(v)} mm`, onInput: (v) => setPen({ size: v }) }),
           slider({ label: 'Zeilenabstand', min: 5, max: 18, step: 0.1, value: pen.lineHeight, format: (v) => `${de(v)} mm`, onInput: (v) => setPen({ lineHeight: v }) }),
+          lineLengthSlider(pen, setPen),
           slider({ label: 'Buchstabenabstand', min: -0.15, max: 0.4, step: 0.01, value: pen.letterSpacing, format: (v) => (v === 0 ? 'normal' : v < 0 ? 'enger' : 'weiter'), onInput: (v) => setPen({ letterSpacing: v }) }),
           slider({ label: 'Wortabstand', min: 0.25, max: 1.2, step: 0.01, value: pen.wordSpacing, format: (v) => `${Math.round(v * 100)} %`, onInput: (v) => setPen({ wordSpacing: v }) }),
           slider({ label: 'Natürlichkeit', min: 0, max: 1, step: 0.01, value: pen.jitter, format: (v) => (v < 0.05 ? 'sauber' : `${Math.round(v * 100)} %`), onInput: (v) => setPen({ jitter: v }) }),

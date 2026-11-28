@@ -15,6 +15,7 @@ export const DEFAULT_PEN = {
   width: 0.5, // Stiftdicke in mm
   size: 4.5, // Schriftgröße: Grundlinie → Oberlinie in mm
   lineHeight: (25 * 25.4) / 72, // Zeilenabstand in mm – 25 pt = Goodnotes „liniert breit“
+  lineLength: 0, // Zeilenlänge in mm (0 = volle Seitenbreite)
   letterSpacing: 0, // zusätzlicher Buchstabenabstand (in Einheiten)
   wordSpacing: 0.55, // Wortabstand (in Einheiten)
   jitter: 0.6, // Natürlichkeit 0…1

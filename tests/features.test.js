@@ -137,3 +137,16 @@ test('Goodnotes-Papier: Linien genau wie im ausgemessenen Goodnotes-PDF', async 
   assert.equal(hs.at(-1), 575.75);
   assert.equal(vs.at(-1), 447.75);
 });
+
+test('Zeilenlänge: Text bricht früher um, 0 = volle Seitenbreite', () => {
+  const text = 'Viele Wörter in einer langen Zeile, damit der Text umbrechen muss. '.repeat(4);
+  const maxX = (l) => Math.max(...l.pages[0].glyphs.map((g) => g.x1));
+  const geo = pageGeometry(PEN);
+  const full = lay(text, { jitter: 0 });
+  const short = lay(text, { jitter: 0, lineLength: 60 });
+  assert.ok(maxX(short) <= geo.margin.left + 60 + 0.01, `zu breit: ${maxX(short)}`);
+  assert.ok(maxX(full) > geo.margin.left + 100);
+  assert.ok(short.pages[0].lines > full.pages[0].lines, 'kürzere Zeilen → mehr Zeilen');
+  // länger als die Seite → wird auf die Seitenbreite begrenzt
+  assert.equal(maxX(lay(text, { jitter: 0, lineLength: 9999 })), maxX(full));
+});

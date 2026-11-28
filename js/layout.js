@@ -167,7 +167,9 @@ export function layoutDocument(blocks, font, pen, { continuous = false, edits = 
   const geo = pageGeometry(pen);
   const { margin } = geo;
   const left = margin.left;
-  const right = geo.width - margin.right;
+  // Zeilenlänge: kürzer als die Seite → Text bricht früher um (z.B. zum Einfügen in eine schmale Stelle)
+  const fullRight = geo.width - margin.right;
+  const right = pen.lineLength > 0 ? Math.min(fullRight, left + pen.lineLength) : fullRight;
   const lh = pen.lineHeight;
   const maxLines = continuous
     ? Infinity

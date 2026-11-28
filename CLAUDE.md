@@ -10,7 +10,7 @@ Schwerpunkt: Notizen, Lernzettel und Karteikarten in der eigenen Schrift.
 - Reines HTML, CSS und JavaScript (ES-Module). **Kein Framework, kein Build-Schritt, keine Abhängigkeiten.**
 - Daten liegen im Browser (`localStorage`, Schlüssel `writegpt:v1`), Service Worker (`sw.js`) für Offline.
 - Lokal starten: `npm start` → http://localhost:8080 (braucht Node.js)
-- Tests: `npm test` (Node-Testrunner, aktuell 64 Tests in `tests/`)
+- Tests: `npm test` (Node-Testrunner, aktuell 66 Tests in `tests/`)
 - Hosting: GitHub Pages (Settings → Pages → Zweig `claude/bold-faraday-15484t`, Ordner `/ (root)`). `.nojekyll` nicht löschen.
 - Code liegt auf GitHub: `lterwersche-web/WriteGPT`, Zweig `claude/bold-faraday-15484t` (Remote `origin`).
 
@@ -67,5 +67,7 @@ Schwerpunkt: Notizen, Lernzettel und Karteikarten in der eigenen Schrift.
   Pixelvergleich geprüft. Seite 455,04 × 588,45 pt, Linien `#d0d2d3`, 0,5 pt dick.
   Liniert breit = 25 pt, Kariert = 16-pt-Kästchen ab Ecke oben links (`GOODNOTES_LINE` in `layout.js`).
   Papier antippen setzt den passenden Zeilenabstand. Das Muster folgt immer `pen.lineHeight`.
+- **Zeilenlänge** (`pen.lineLength` in mm, 0 = volle Breite): Regler unter „Zeilenabstand“, zeigt cm,
+  auf Kariert zusätzlich Kästchen und rastet auf ganze Kästchen ein.
 - Offen: Goodnotes „Liniert schmal“, „Gepunktet“ und Größe A4 sind NICHT ausgemessen (PDFs fehlen) – nicht raten.
 - Offen: Kopiertes Bild in Goodnotes unscharf – Auflösung auf 24 px/mm erhöht, Bestätigung auf dem iPad fehlt.
